@@ -112,7 +112,7 @@ jobs:
             VERSION=${{ steps.meta.outputs.version }}
 
       - name: Deploy to Web3 Infrastructure
-        uses: appleboy/ssh-action@v0.1.5
+        uses: appleboy/ssh-action@v1.2.5
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
