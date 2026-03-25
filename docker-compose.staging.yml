@@ -1,0 +1,22 @@
+version: '3.8'
+
+
+services:
+  admin:
+    image: ghcr.io/yourusername/martech-admin:staging
+    environment:
+      NEXT_PUBLIC_API_URL: https://staging.yourdomain.com/api
+      NEXT_PUBLIC_APP_URL: https://staging.yourdomain.com/admin
+    networks:
+      - martech-staging
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+networks:
+  martech-staging:
+    external: true

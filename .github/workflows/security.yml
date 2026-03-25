@@ -1,0 +1,163 @@
+name: Security Scan - Admin
+
+on:
+  schedule:
+    # Run security scan daily at 2:30 AM UTC
+    - cron: '30 2 * * *'
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  # Container Security Scanning
+  container-security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+        
+      - name: Build Docker image
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          load: true
+          tags: admin:scan
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: admin:scan
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH'
+          
+      - name: Upload Trivy scan results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v2
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+  # Code Security Analysis
+  code-security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+          
+      - name: Install dependencies
+        run: npm ci
+        
+      - name: Run npm audit
+        run: |
+          npm audit --audit-level moderate --json > npm-audit.json || true
+          
+      - name: Process npm audit results
+        run: |
+          if [ -f "npm-audit.json" ]; then
+            echo "## npm Audit Results for Admin" >> $GITHUB_STEP_SUMMARY
+            critical=$(cat npm-audit.json | jq -r '.metadata.vulnerabilities.critical // 0')
+            high=$(cat npm-audit.json | jq -r '.metadata.vulnerabilities.high // 0')
+            moderate=$(cat npm-audit.json | jq -r '.metadata.vulnerabilities.moderate // 0')
+            echo "- Critical: $critical" >> $GITHUB_STEP_SUMMARY
+            echo "- High: $high" >> $GITHUB_STEP_SUMMARY
+            echo "- Moderate: $moderate" >> $GITHUB_STEP_SUMMARY
+          fi
+
+  # Admin Security Analysis
+  admin-security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Check admin-specific security
+        run: |
+          echo "## Admin Panel Security Check" >> $GITHUB_STEP_SUMMARY
+          
+          # Check for admin-specific vulnerabilities
+          if grep -r "admin\|password\|secret" --include="*.tsx" --include="*.ts" --include="*.js" app/; then
+            echo "⚠️ **Admin-specific patterns found - review manually**" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "✅ No obvious admin security issues" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          # Check for exposed API keys
+          if grep -r "API_KEY\|SECRET_KEY\|PRIVATE_KEY" --include="*.tsx" --include="*.ts" --include="*.js" app/; then
+            echo "⚠️ **Potential API key patterns found**" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "✅ No exposed API keys found" >> $GITHUB_STEP_SUMMARY
+          fi
+
+  # Secret Scanning
+  secret-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+          
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          config-path: .gitleaks.toml
+          report-path: gitleaks-report.json
+          report-format: json
+          
+      - name: Process Gitleaks results
+        run: |
+          if [ -f "gitleaks-report.json" ]; then
+            echo "## Secret Scan Results" >> $GITHUB_STEP_SUMMARY
+            secrets_found=$(cat gitleaks-report.json | jq length)
+            if [ $secrets_found -gt 0 ]; then
+              echo "⚠️ **$secrets_found potential secrets found!**" >> $GITHUB_STEP_SUMMARY
+              exit 1
+            else
+              echo "✅ No secrets found" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "✅ No secrets found" >> $GITHUB_STEP_SUMMARY
+          fi
+
+  # License Compliance
+  license-compliance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          
+      - name: Install license checker
+        run: npm install -g license-checker
+        
+      - name: Check licenses for Admin
+        run: |
+          license-checker --onlyAllow 'MIT;Apache-2.0;BSD-2-Clause;BSD-3-Clause;ISC;0BSD' --json admin-licenses.json || true
+          
+      - name: Process license results
+        run: |
+          echo "## License Compliance Results for Admin" >> $GITHUB_STEP_SUMMARY
+          if [ -f "admin-licenses.json" ]; then
+            non_compliant=$(cat admin-licenses.json | jq -r '.[] | select(.licenses | type == "array" and (.licenses[] | contains("MIT") or contains("Apache") or contains("BSD") or contains("ISC") | not)) | .name')
+            if [ -n "$non_compliant" ]; then
+              echo "⚠️ **Non-compliant licenses found:**" >> $GITHUB_STEP_SUMMARY
+              echo "$non_compliant" | while read line; do
+                echo "- $line" >> $GITHUB_STEP_SUMMARY
+              done
+            else
+              echo "✅ All licenses compliant" >> $GITHUB_STEP_SUMMARY
+            fi
+          fi

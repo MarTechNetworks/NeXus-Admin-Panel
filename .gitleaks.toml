@@ -1,0 +1,182 @@
+title = "Gitleaks Configuration - Admin Panel Security"
+
+# Extend the default rules to include Web3-specific secrets
+[extend]
+useDefault = true
+
+# Custom rules for admin-specific secrets
+[[rules]]
+description = "Admin API Key"
+id = "admin-api-key"
+regex = '''(?i)(admin)[_-]?api[_-]?key[=:]\s*([a-zA-Z0-9_-]{32,})'''
+keywords = ["admin", "api", "key"]
+
+[[rules]]
+description = "Admin Secret"
+id = "admin-secret"
+regex = '''(?i)(admin)[_-]?secret[=:]\s*([a-zA-Z0-9_-]{32,})'''
+keywords = ["admin", "secret"]
+
+[[rules]]
+description = "Admin Password"
+id = "admin-password"
+regex = '''(?i)(admin)[_-]?password[=:]\s*([a-zA-Z0-9_-]{8,})'''
+keywords = ["admin", "password"]
+
+[[rules]]
+description = "Ethereum Private Key"
+id = "ethereum-private-key"
+regex = '''(?i)(ethereum|eth)[_-]?private[_-]?key[=:]\s*([0-9a-fA-F]{64})'''
+keywords = ["ethereum", "private", "key", "eth"]
+
+[[rules]]
+description = "Solana Private Key"
+id = "solana-private-key"
+regex = '''(?i)(solana)[_-]?private[_-]?key[=:]\s*([1-9A-HJ-NP-Za-km-z]{88})'''
+keywords = ["solana", "private", "key"]
+
+[[rules]]
+description = "Mnemonic Phrase"
+id = "mnemonic-phrase"
+regex = '''(?i)(mnemonic|seed|phrase)[=:]\s*([a-zA-Z ]{15,})'''
+keywords = ["mnemonic", "seed", "phrase"]
+
+[[rules]]
+description = "Infura Project ID"
+id = "infura-project-id"
+regex = '''(?i)(infura)[_-]?project[_-]?id[=:]\s*([a-f0-9]{32})'''
+keywords = ["infura", "project", "id"]
+
+[[rules]]
+description = "Alchemy API Key"
+id = "alchemy-api-key"
+regex = '''(?i)(alchemy)[_-]?api[_-]?key[=:]\s*([a-zA-Z0-9_-]{32,})'''
+keywords = ["alchemy", "api", "key"]
+
+[[rules]]
+description = "Phantom Wallet API Key"
+id = "phantom-api-key"
+regex = '''(?i)(phantom)[_-]?api[_-]?key[=:]\s*([a-zA-Z0-9_-]{32,})'''
+keywords = ["phantom", "api", "key"]
+
+[[rules]]
+description = "Solana RPC URL with Key"
+id = "solana-rpc-url"
+regex = '''(?i)(https?://[^/]+\.(solana\.com|helius\.rpc\.pool|triton\.one)/[^/]+[a-zA-Z0-9_-]{20,})'''
+keywords = ["solana.com", "helius.rpc.pool", "triton.one"]
+
+[[rules]]
+description = "Web3 Secret Key"
+id = "web3-secret-key"
+regex = '''(?i)(web3|blockchain|crypto)[_-]?secret[_-]?key[=:]\s*([a-zA-Z0-9+/]{32,})'''
+keywords = ["web3", "blockchain", "crypto", "secret", "key"]
+
+[[rules]]
+description = "JWT Secret"
+id = "jwt-secret"
+regex = '''(?i)(jwt)[_-]?secret[=:]\s*([a-zA-Z0-9_-]{32,})'''
+keywords = ["jwt", "secret"]
+
+[[rules]]
+description = "Encryption Key"
+id = "encryption-key"
+regex = '''(?i)(encryption)[_-]?key[=:]\s*([a-zA-Z0-9_-]{32,})'''
+keywords = ["encryption", "key"]
+
+# Allowlist for common false positives
+[allowlist]
+description = "Global Allowlist"
+paths = [
+    '''node_modules''',
+    '''package-lock\.json''',
+    '''yarn\.lock''',
+    '''\.git''',
+    '''\.vscode''',
+    '''\.idea''',
+    '''dist''',
+    '''build''',
+    '''coverage''',
+    '''\.next''',
+    '''\.nuxt''',
+    '''\.cache''',
+    '''tmp''',
+    '''temp''',
+    '''logs''',
+    '''test''',
+    '''tests''',
+    '''spec''',
+    '''specs''',
+    '''mock''',
+    '''mocks''',
+    '''fixture''',
+    '''fixtures''',
+    '''example''',
+    '''examples''',
+    '''sample''',
+    '''samples''',
+    '''demo''',
+    '''demos''',
+    '''sandbox''',
+    '''\.env\.example''',
+    '''\.env\.sample''',
+    '''\.env\.template''',
+    '''\.env\.local''',
+    '''\.env\.development''',
+    '''\.env\.test''',
+    '''\.env\.staging''',
+    '''README\.md''',
+    '''CHANGELOG\.md''',
+    '''CONTRIBUTING\.md''',
+    '''LICENSE''',
+    '''\.md$''',
+    '''\.txt$''',
+    '''\.log$''',
+    '''\.bak$''',
+    '''\.backup$''',
+    '''\.old$''',
+    '''\.orig$''',
+    '''\.tmp$''',
+    '''\.temp$'''
+]
+
+# Allowlist for specific regex patterns
+[[allowlist.regexes]]
+description = "Allow example/test keys"
+regex = '''(?i)(example|test|mock|sample|demo|sandbox|fake|dummy|placeholder)[_-]?(key|secret|token|password|private|seed|mnemonic)'''
+
+[[allowlist.regexes]]
+description = "Allow documented examples"
+regex = '''(?i)(your[_-]?)(key|secret|token|password|private|seed|mnemonic)[_-]?here'''
+
+[[allowlist.regexes]]
+description = "Allow commented out secrets"
+regex = '''^\s*#.*[a-zA-Z0-9_-]{32,}'''
+
+[[allowlist.regexes]]
+description = "Allow environment variable placeholders"
+regex = '''\$\{[A-Z_]+\}'''
+
+[[allowlist.regexes]]
+description = "Allow localhost/127.0.0.1 addresses"
+regex = '''(localhost|127\.0\.0\.1|0\.0\.0\.0|::1)'''
+
+[[allowlist.regexes]]
+description = "Allow test network configurations"
+regex = '''(?i)(testnet|devnet|goerli|mumbai|sepolia|arbitrum-goerli|optimism-goerli)'''
+
+[[allowlist.regexes]]
+description = "Allow documentation examples"
+regex = '''(?i)(example|sample|demo|test|mock|fake|dummy|placeholder)[_-]?(private|key|secret|token|seed|mnemonic)[=:]\s*([a-zA-Z0-9_-]{10,})'''
+
+# Allowlist for specific commits
+[allowlist.commits]
+description = "Allow test commits"
+message = '''(?i)(test|example|demo|sample|mock|fake|dummy|placeholder)'''
+
+[allowlist.commits]
+description = "Allow initial setup commits"
+message = '''(?i)(initial|setup|bootstrap|scaffold|template)'''
+
+[allowlist.commits]
+description = "Allow documentation commits"
+message = '''(?i)(docs|documentation|readme|changelog)'''
