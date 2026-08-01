@@ -33,7 +33,6 @@ import {
   useCollections,
   useAdminStats,
 } from '@/lib/api/hooks'
-import { makeSeries } from '@/lib/dashboard'
 import type { Collection } from '@/lib/types'
 
 import { SortableFeaturedRow } from '@/components/featured/SortableFeaturedRow'
@@ -299,8 +298,7 @@ export default function FeaturedPage() {
                 accent={PURPLE}
                 label="Combined Minted"
                 value={metrics.minted.toLocaleString()}
-                spark={makeSeries(metrics.minted)}
-                sparkGradientId="feat-mint"
+                sub="across featured"
               />
               <StatCard
                 icon={Flame}

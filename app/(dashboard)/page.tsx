@@ -29,8 +29,10 @@ function KpiCard({
 
 export default function DashboardPage() {
   const { data: stats, isLoading: statsLoading, refetch: refetchStats } = useAdminStats()
+  // No `page`: the collections endpoint is cursor-based, and page 1 is simply
+  // the request with no cursor.
   const { data: recent, isLoading: recentLoading, refetch: refetchRecent } = useCollections(
-    { page: 1, pageSize: 5 }
+    { pageSize: 5 }
   )
 
   const handleRefresh = () => {

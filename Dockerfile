@@ -12,7 +12,7 @@ RUN npm install -g pnpm@11.17.0
 # Copy package files. pnpm-workspace.yaml is not optional: pnpm 11 reads
 # `allowBuilds` from it, and without it the install aborts with
 # ERR_PNPM_IGNORED_BUILDS on sharp / @parcel/watcher / unrs-resolver.
-COPY package.json pnpm-lock.yaml* pnpm-workspace.yaml .npmrc ./
+COPY package.json pnpm-lock.yaml* pnpm-workspace.yaml ./
 
 # Install dependencies
 RUN pnpm install --frozen-lockfile
@@ -29,7 +29,7 @@ RUN npm install -g pnpm@11.17.0
 # Copy package files. pnpm-workspace.yaml is not optional: pnpm 11 reads
 # `allowBuilds` from it, and without it the install aborts with
 # ERR_PNPM_IGNORED_BUILDS on sharp / @parcel/watcher / unrs-resolver.
-COPY package.json pnpm-lock.yaml* pnpm-workspace.yaml .npmrc ./
+COPY package.json pnpm-lock.yaml* pnpm-workspace.yaml ./
 
 # Install dependencies
 RUN pnpm install --frozen-lockfile
