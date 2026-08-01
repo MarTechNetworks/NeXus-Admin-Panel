@@ -57,7 +57,37 @@ RUN test -n "$NEXT_PUBLIC_API_URL" || (echo "NEXT_PUBLIC_API_URL is empty" && ex
 # Build the application
 RUN pnpm build
 
-# Stage 3: Runner (Production)
+# Stage 3: Development
+#
+# Deliberately ahead of the runner stage: `docker build` with no --target builds
+# the LAST stage in the file, so production has to be last. When this stage was
+# last, CI (which passed no target) shipped a `next dev` server to the VPS.
+FROM node:22-alpine AS development
+WORKDIR /app
+
+# Install pnpm. Pinned to the `packageManager` version in package.json: an
+# unpinned global install silently picks up whatever pnpm is latest on the day
+# the image is built, which is how a Node version bump becomes a surprise.
+RUN npm install -g pnpm@11.17.0
+
+# Copy package files
+COPY package.json pnpm-lock.yaml* pnpm-workspace.yaml ./
+
+# Install dependencies
+RUN pnpm install
+
+# Copy source code
+COPY . .
+
+# Set environment variables
+ENV NODE_ENV development
+ENV NEXT_TELEMETRY_DISABLED 1
+
+EXPOSE 3000
+
+CMD ["pnpm", "dev"]
+
+# Stage 4: Runner (Production) — MUST STAY LAST, see the note on stage 3
 FROM node:22-alpine AS runner
 WORKDIR /app
 
@@ -92,29 +122,3 @@ ENV PORT 3000
 ENV HOSTNAME "0.0.0.0"
 
 CMD ["node", "server.js"]
-
-# Stage 4: Development
-FROM node:22-alpine AS development
-WORKDIR /app
-
-# Install pnpm. Pinned to the `packageManager` version in package.json: an
-# unpinned global install silently picks up whatever pnpm is latest on the day
-# the image is built, which is how a Node version bump becomes a surprise.
-RUN npm install -g pnpm@11.17.0
-
-# Copy package files
-COPY package.json pnpm-lock.yaml* pnpm-workspace.yaml ./
-
-# Install dependencies
-RUN pnpm install
-
-# Copy source code
-COPY . .
-
-# Set environment variables
-ENV NODE_ENV development
-ENV NEXT_TELEMETRY_DISABLED 1
-
-EXPOSE 3000
-
-CMD ["pnpm", "dev"]

@@ -42,6 +42,10 @@ jobs:
         with:
           context: .
           push: true
+          # Explicit, because `docker build` with no target builds the LAST stage
+          # in the Dockerfile. Omitting this ships the `development` stage -- a
+          # `next dev` server -- to production. Matches Frontend/.github/workflows/ci.yml.
+          target: runner
           # The deploy pulls the sha tag, and it is a full, IMMUTABLE sha rather
           # than a mutable environment tag: the keep-N image reclaim on the host
           # retains the previous tag as a rollback target, and a mutable tag
