@@ -1,22 +1,23 @@
-version: '3.8'
-
-
+# Nexus admin console — staging.
+#
+# Same shape as docker-compose.production.yml; see that file for why no
+# NEXT_PUBLIC_* variables appear here (they are baked in at image build time).
 services:
   admin:
-    image: ghcr.io/yourusername/martech-admin:staging
-    environment:
-      NEXT_PUBLIC_API_URL: https://staging.yourdomain.com/api
-      NEXT_PUBLIC_APP_URL: https://staging.yourdomain.com/admin
+    image: ghcr.io/martechnetworks/nexus-admin:staging
+    container_name: nexus-admin-staging
+    ports:
+      - "127.0.0.1:3021:3000"
     networks:
-      - martech-staging
+      - martech-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:3000/login"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 20s
 
 networks:
-  martech-staging:
+  martech-network:
     external: true

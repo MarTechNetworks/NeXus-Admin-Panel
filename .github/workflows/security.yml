@@ -48,18 +48,21 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       
+      # pnpm project: `npm ci` fails with no package-lock.json, and pnpm 11 needs Node 22.
+      - uses: pnpm/action-setup@v4
+
       - name: Setup Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
-          node-version: '18'
-          cache: 'npm'
-          
+          node-version: '22'
+          cache: 'pnpm'
+
       - name: Install dependencies
-        run: npm ci
-        
-      - name: Run npm audit
+        run: pnpm install --frozen-lockfile
+
+      - name: Run dependency audit
         run: |
-          npm audit --audit-level moderate --json > npm-audit.json || true
+          pnpm audit --audit-level moderate --json > npm-audit.json || true
           
       - name: Process npm audit results
         run: |
@@ -138,7 +141,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: '18'
+          node-version: '22'
           
       - name: Install license checker
         run: npm install -g license-checker

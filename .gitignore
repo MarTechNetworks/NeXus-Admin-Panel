@@ -1,0 +1,53 @@
+# ---------------------------------------------------------------------------
+# Nexus Admin Panel — Next.js
+# ---------------------------------------------------------------------------
+
+# --- Dependencies -----------------------------------------------------------
+node_modules/
+.pnpm-store/
+.yarn/
+*-debug.log*
+
+# This app uses pnpm; other lockfiles are noise.
+package-lock.json
+yarn.lock
+
+# --- Next.js build output ---------------------------------------------------
+.next/
+out/
+build/
+dist/
+next-env.d.ts
+*.tsbuildinfo
+
+# --- Environment ------------------------------------------------------------
+# Real env files stay on disk but are never committed. The *.example and
+# *.template files ARE committed as references for whoever deploys this.
+.env
+.env.*
+!.env.example
+!.env.*.template
+
+# --- Testing / coverage -----------------------------------------------------
+coverage/
+.nyc_output/
+
+# --- Editors / OS -----------------------------------------------------------
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+ehthumbs.db
+
+# --- Misc -------------------------------------------------------------------
+*.log
+*.tmp
+.cache/
+.vercel

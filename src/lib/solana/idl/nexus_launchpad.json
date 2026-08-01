@@ -1,0 +1,3317 @@
+{
+  "address": "8RTegpHmJQDXnV7FAPR7hZhK5CDazuvfLTpfg66U92K3",
+  "metadata": {
+    "name": "nexus_launchpad",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "NeXus NFT Launchpad - Minting Program"
+  },
+  "instructions": [
+    {
+      "name": "accept_registry_admin",
+      "docs": [
+        "Accept a pending registry authority proposal (new authority only).",
+        "The new authority must sign to prove key control before the transfer takes effect."
+      ],
+      "discriminator": [
+        160,
+        39,
+        133,
+        143,
+        76,
+        44,
+        46,
+        233
+      ],
+      "accounts": [
+        {
+          "name": "registry",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  101,
+                  103,
+                  105,
+                  115,
+                  116,
+                  114,
+                  121
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "new_authority",
+          "signer": true
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "admin_reset_registry",
+      "docs": [
+        "One-time admin recovery: reinitialize the global registry IN PLACE after a struct",
+        "layout change, reusing the existing (already large) account allocation. Gated to the",
+        "registry's stored authority, read raw from bytes [8..40] so it works regardless of the",
+        "old on-chain layout. Clears the collections list (existing collections remain",
+        "discoverable via getProgramAccounts). Intended for dev/localnet recovery, not routine use."
+      ],
+      "discriminator": [
+        9,
+        164,
+        71,
+        135,
+        163,
+        23,
+        68,
+        137
+      ],
+      "accounts": [
+        {
+          "name": "registry",
+          "docs": [
+            "done here (the existing data may be an incompatible layout); the authority is validated",
+            "against the stored authority bytes inside admin_reset_registry."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  101,
+                  103,
+                  105,
+                  115,
+                  116,
+                  114,
+                  121
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "authority",
+          "signer": true
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "assert_transfer_allowed",
+      "docs": [
+        "Freeze-state gate check — returns TradingFrozen if this collection's freeze is active.",
+        "",
+        "IMPORTANT: This instruction does NOT perform the NFT transfer and does NOT enforce",
+        "the freeze on-chain. It is a freeze-state oracle only. Any caller can bypass it by",
+        "invoking Metaplex transfer instructions directly without calling this instruction.",
+        "Actual on-chain freeze enforcement must be configured via Metaplex rule sets",
+        "(FreezeDelegate) at the collection level — this program cannot block those CPIs.",
+        "",
+        "Use this instruction in custom transfer flows that opt-in to the freeze check.",
+        "Renamed from `transfer_nft` to prevent the false impression that calling it moves tokens."
+      ],
+      "discriminator": [
+        160,
+        123,
+        97,
+        203,
+        175,
+        46,
+        55,
+        180
+      ],
+      "accounts": [
+        {
+          "name": "collection"
+        },
+        {
+          "name": "nft_mint"
+        },
+        {
+          "name": "from"
+        },
+        {
+          "name": "to"
+        },
+        {
+          "name": "authority",
+          "signer": true
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "cancel_upgrade",
+      "docs": [
+        "Cancel pending upgrade (registry authority only).",
+        "Use this if the upgrade needs to be aborted for any reason."
+      ],
+      "discriminator": [
+        216,
+        52,
+        40,
+        78,
+        188,
+        214,
+        201,
+        228
+      ],
+      "accounts": [
+        {
+          "name": "registry",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  101,
+                  103,
+                  105,
+                  115,
+                  116,
+                  114,
+                  121
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "authority",
+          "signer": true,
+          "relations": [
+            "registry"
+          ]
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "close_collection_uri",
+      "docs": [
+        "Close the CollectionUri PDA and reclaim its rent to the authority.",
+        "Call this when the mint is over or the URI is no longer needed."
+      ],
+      "discriminator": [
+        148,
+        25,
+        192,
+        183,
+        198,
+        172,
+        92,
+        165
+      ],
+      "accounts": [
+        {
+          "name": "collection",
+          "writable": true
+        },
+        {
+          "name": "authority",
+          "signer": true,
+          "relations": [
+            "collection"
+          ]
+        },
+        {
+          "name": "collection_uri",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  117,
+                  114,
+                  105
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "collection"
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "close_mint_split_config",
+      "docs": [
+        "Close the MintSplitConfig PDA and reclaim rent. Clears has_split on the collection.",
+        "Guard: minting must be permanently over (sold out or end_time passed) so that authority",
+        "cannot close splits mid-mint and silently reroute all revenue to creator_wallet."
+      ],
+      "discriminator": [
+        208,
+        89,
+        10,
+        100,
+        86,
+        135,
+        12,
+        121
+      ],
+      "accounts": [
+        {
+          "name": "collection",
+          "writable": true
+        },
+        {
+          "name": "authority",
+          "signer": true,
+          "relations": [
+            "collection"
+          ]
+        },
+        {
+          "name": "mint_split_config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  112,
+                  108,
+                  105,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "collection"
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "close_wallet_tracker",
+      "docs": [
+        "Close a WalletMintTracker PDA and reclaim rent to the minter.",
+        "Gated: minting must be permanently over (sold out or end_time passed) to prevent",
+        "a minter from closing and resetting their tracker to bypass mint_limit_per_wallet."
+      ],
+      "discriminator": [
+        3,
+        200,
+        212,
+        116,
+        54,
+        253,
+        19,
+        52
+      ],
+      "accounts": [
+        {
+          "name": "collection"
+        },
+        {
+          "name": "buyer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "wallet_tracker",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  119,
+                  97,
+                  108,
+                  108,
+                  101,
+                  116,
+                  95,
+                  109,
+                  105,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "collection"
+              },
+              {
+                "kind": "account",
+                "path": "buyer"
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "complete_upgrade",
+      "docs": [
+        "Complete program upgrade (registry authority only).",
+        "Can only be called after the delay period has passed."
+      ],
+      "discriminator": [
+        3,
+        35,
+        98,
+        10,
+        239,
+        180,
+        49,
+        168
+      ],
+      "accounts": [
+        {
+          "name": "registry",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  101,
+                  103,
+                  105,
+                  115,
+                  116,
+                  114,
+                  121
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "authority",
+          "signer": true,
+          "relations": [
+            "registry"
+          ]
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "create_collection",
+      "docs": [
+        "Create a new NFT collection — metadata + minting config in one transaction.",
+        "",
+        "All metadata lives off-chain (Arweave/IPFS/HTTPS). Upload it first, pass",
+        "the URI here. The on-chain account only stores what's actually needed for",
+        "enforcement: supply caps, prices, times, fees, and freeze state.",
+        "",
+        "Registers in the global registry. If the registry is full (300 slots),",
+        "the collection still gets created — it just won't appear in the fast list.",
+        "(getProgramAccounts always works as a fallback.)"
+      ],
+      "discriminator": [
+        156,
+        251,
+        92,
+        54,
+        233,
+        2,
+        16,
+        82
+      ],
+      "accounts": [
+        {
+          "name": "collection",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  108,
+                  108,
+                  101,
+                  99,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "mint",
+          "docs": [
+            "Metaplex Core collection address (also the collection seed key)."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "registry",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  101,
+                  103,
+                  105,
+                  115,
+                  116,
+                  114,
+                  121
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "mint_authority",
+          "docs": [
+            "PDA that signs Metaplex Core CPIs for this collection."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  105,
+                  110,
+                  116,
+                  95,
+                  97,
+                  117,
+                  116,
+                  104,
+                  111,
+                  114,
+                  105,
+                  116,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "creator_wallet",
+          "writable": true
+        },
+        {
+          "name": "platform_wallet"
+        },
+        {
+          "name": "royalty_config",
+          "docs": [
+            "Immutable royalty terms committed when the collection is created."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  111,
+                  121,
+                  97,
+                  108,
+                  116,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "collection"
+              }
+            ]
+          }
+        },
+        {
+          "name": "mpl_core_program",
+          "address": "CoREENxT6tW1HoK8ypY1SxRMZTcVPm7R94rH4PZNhX7d"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "platform_fee_config",
+          "docs": [
+            "Global platform fee config. Declared last so existing account indices are",
+            "unchanged. When present, its `default_fee_bps` overrides the `platform_fee_bps`",
+            "argument, making the platform fee something the creator cannot opt out of."
+          ],
+          "optional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  108,
+                  97,
+                  116,
+                  102,
+                  111,
+                  114,
+                  109,
+                  95,
+                  102,
+                  101,
+                  101,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "collection_name",
+          "type": "string"
+        },
+        {
+          "name": "metadata_uri",
+          "type": "string"
+        },
+        {
+          "name": "collection_config",
+          "type": {
+            "defined": {
+              "name": "CollectionConfig"
+            }
+          }
+        },
+        {
+          "name": "platform_fee_bps",
+          "type": "u16"
+        }
+      ]
+    },
+    {
+      "name": "emergency_pause_all",
+      "docs": [
+        "Emergency pause - stops all minting across all collections (registry authority only).",
+        "Use this only in emergencies like security vulnerabilities or exploits."
+      ],
+      "discriminator": [
+        96,
+        81,
+        255,
+        34,
+        122,
+        30,
+        88,
+        137
+      ],
+      "accounts": [
+        {
+          "name": "registry",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  101,
+                  103,
+                  105,
+                  115,
+                  116,
+                  114,
+                  121
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "authority",
+          "signer": true,
+          "relations": [
+            "registry"
+          ]
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "emergency_unpause_all",
+      "docs": [
+        "Emergency unpause - resumes normal operations (registry authority only).",
+        "Only call after emergency is resolved and security is restored."
+      ],
+      "discriminator": [
+        182,
+        245,
+        122,
+        43,
+        0,
+        230,
+        104,
+        51
+      ],
+      "accounts": [
+        {
+          "name": "registry",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  101,
+                  103,
+                  105,
+                  115,
+                  116,
+                  114,
+                  121
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "authority",
+          "signer": true,
+          "relations": [
+            "registry"
+          ]
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "get_collection_freeze_state",
+      "docs": [
+        "Batch freeze state check — returns current freeze status for the entire collection.",
+        "Use this to determine whether to batch-freeze or batch-thaw all NFTs."
+      ],
+      "discriminator": [
+        111,
+        118,
+        100,
+        63,
+        33,
+        128,
+        175,
+        40
+      ],
+      "accounts": [
+        {
+          "name": "collection"
+        }
+      ],
+      "args": [],
+      "returns": "bool"
+    },
+    {
+      "name": "init_mint_phase_schedule",
+      "docs": [
+        "Initialize the on-chain mint phase schedule (authority only, once per collection).",
+        "All phase prices and allowlist roots are committed upfront; locked after first mint."
+      ],
+      "discriminator": [
+        64,
+        255,
+        200,
+        66,
+        16,
+        242,
+        225,
+        20
+      ],
+      "accounts": [
+        {
+          "name": "collection",
+          "writable": true
+        },
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "collection"
+          ]
+        },
+        {
+          "name": "phase_schedule",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  104,
+                  97,
+                  115,
+                  101,
+                  115
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "collection"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "entries",
+          "type": {
+            "vec": {
+              "defined": {
+                "name": "MintPhaseEntry"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "init_mint_split_config",
+      "docs": [
+        "Create the MintSplitConfig PDA. Call this before update_mint_fund_splits."
+      ],
+      "discriminator": [
+        96,
+        166,
+        148,
+        114,
+        131,
+        94,
+        23,
+        238
+      ],
+      "accounts": [
+        {
+          "name": "collection",
+          "writable": true
+        },
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "collection"
+          ]
+        },
+        {
+          "name": "mint_split_config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  112,
+                  108,
+                  105,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "collection"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "init_platform_fee_config",
+      "docs": [
+        "Create the global platform fee config (registry authority only, once).",
+        "",
+        "Launch configuration is 2 recipients at 8000/2000 bps (80/20), a 1% paid-mint",
+        "fee, and a 0.01 SOL flat fee on free mints — but every one of those is an",
+        "argument here, and `update_platform_fee_config` can change them later without",
+        "touching the program binary."
+      ],
+      "discriminator": [
+        17,
+        23,
+        125,
+        204,
+        106,
+        26,
+        192,
+        178
+      ],
+      "accounts": [
+        {
+          "name": "platform_fee_config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  108,
+                  97,
+                  116,
+                  102,
+                  111,
+                  114,
+                  109,
+                  95,
+                  102,
+                  101,
+                  101,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "registry",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  101,
+                  103,
+                  105,
+                  115,
+                  116,
+                  114,
+                  121
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "registry"
+          ]
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "recipients",
+          "type": {
+            "vec": "pubkey"
+          }
+        },
+        {
+          "name": "shares_bps",
+          "type": {
+            "vec": "u16"
+          }
+        },
+        {
+          "name": "free_mint_fee_lamports",
+          "type": "u64"
+        },
+        {
+          "name": "default_fee_bps",
+          "type": "u16"
+        }
+      ]
+    },
+    {
+      "name": "initialize_registry",
+      "docs": [
+        "Initialize the global collection registry.",
+        "",
+        "One-time platform setup. Must exist before any collection can be created.",
+        "Stores the platform authority so update_featured is actually gated",
+        "(the original had no auth check — fixed here)."
+      ],
+      "discriminator": [
+        189,
+        181,
+        20,
+        17,
+        174,
+        57,
+        249,
+        59
+      ],
+      "accounts": [
+        {
+          "name": "registry",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  101,
+                  103,
+                  105,
+                  115,
+                  116,
+                  114,
+                  121
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "initiate_upgrade",
+      "docs": [
+        "Initiate program upgrade with safety checks (registry authority only).",
+        "This sets up the upgrade state machine for safe program upgrades."
+      ],
+      "discriminator": [
+        156,
+        81,
+        242,
+        118,
+        105,
+        137,
+        142,
+        10
+      ],
+      "accounts": [
+        {
+          "name": "registry",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  101,
+                  103,
+                  105,
+                  115,
+                  116,
+                  114,
+                  121
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "authority",
+          "signer": true,
+          "relations": [
+            "registry"
+          ]
+        }
+      ],
+      "args": [
+        {
+          "name": "new_program_id",
+          "type": "pubkey"
+        },
+        {
+          "name": "upgrade_delay",
+          "type": "i64"
+        }
+      ]
+    },
+    {
+      "name": "is_trading_frozen",
+      "docs": [
+        "Check if trading is currently frozen. Read-only, no state change."
+      ],
+      "discriminator": [
+        98,
+        84,
+        90,
+        103,
+        60,
+        250,
+        134,
+        72
+      ],
+      "accounts": [
+        {
+          "name": "collection"
+        }
+      ],
+      "args": [],
+      "returns": "bool"
+    },
+    {
+      "name": "mint",
+      "docs": [
+        "Mint NFTs from the collection.",
+        "",
+        "Allowlist active: pass proof (≤24 elements) and leaf_index.",
+        "Public mint: pass empty Vec and 0.",
+        "",
+        "Payment goes directly to platform_wallet (fee) and creator_wallet (remainder).",
+        "No escrow. No intermediate accounts. Just math and two transfers.",
+        "When has_split is set, the creator amount is split across up to 10 recipients",
+        "passed as remaining_accounts in order: [buyer, recipient_0, ..., recipient_n-1]."
+      ],
+      "discriminator": [
+        51,
+        57,
+        225,
+        47,
+        182,
+        146,
+        137,
+        166
+      ],
+      "accounts": [
+        {
+          "name": "collection",
+          "writable": true
+        },
+        {
+          "name": "registry",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  101,
+                  103,
+                  105,
+                  115,
+                  116,
+                  114,
+                  121
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "buyer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "creator_wallet",
+          "writable": true
+        },
+        {
+          "name": "platform_wallet",
+          "writable": true
+        },
+        {
+          "name": "wallet_tracker",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  119,
+                  97,
+                  108,
+                  108,
+                  101,
+                  116,
+                  95,
+                  109,
+                  105,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "collection"
+              },
+              {
+                "kind": "account",
+                "path": "buyer"
+              }
+            ]
+          }
+        },
+        {
+          "name": "split_config",
+          "writable": true,
+          "optional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  112,
+                  108,
+                  105,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "collection"
+              }
+            ]
+          }
+        },
+        {
+          "name": "royalty_config",
+          "docs": [
+            "Royalty terms used by legacy Token Metadata mints. Required when bit4 is set."
+          ],
+          "optional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  111,
+                  121,
+                  97,
+                  108,
+                  116,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "collection"
+              }
+            ]
+          }
+        },
+        {
+          "name": "core_collection",
+          "docs": [
+            "Metaplex Core collection (collection.mint). Required for Core collections."
+          ],
+          "writable": true
+        },
+        {
+          "name": "mint_authority",
+          "docs": [
+            "PDA update/mint authority for Metaplex Core CPIs."
+          ]
+        },
+        {
+          "name": "mpl_core_program",
+          "address": "CoREENxT6tW1HoK8ypY1SxRMZTcVPm7R94rH4PZNhX7d"
+        },
+        {
+          "name": "allowlist_program",
+          "docs": [
+            "Optional: Allowlist program (not currently used; kept for future extensibility)"
+          ],
+          "optional": true
+        },
+        {
+          "name": "allowlist_account",
+          "docs": [
+            "Optional: Allowlist account for verification (only when collection.has_allowlist())"
+          ],
+          "optional": true
+        },
+        {
+          "name": "phase_schedule",
+          "docs": [
+            "Optional phase schedule — when present, active phase drives price/allowlist/limit."
+          ],
+          "writable": true,
+          "optional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  104,
+                  97,
+                  115,
+                  101,
+                  115
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "collection"
+              }
+            ]
+          }
+        },
+        {
+          "name": "wallet_phase_tracker",
+          "docs": [
+            "Per-phase wallet mint counts — required when phase_schedule is present."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  119,
+                  97,
+                  108,
+                  108,
+                  101,
+                  116,
+                  95,
+                  112,
+                  104,
+                  97,
+                  115,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "collection"
+              },
+              {
+                "kind": "account",
+                "path": "buyer"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "platform_fee_config",
+          "docs": [
+            "Global platform fee config. Optional — when absent, the whole platform fee",
+            "goes to `platform_wallet` exactly as before. When present it is authoritative",
+            "for the free-mint flat fee and the fee split."
+          ],
+          "optional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  108,
+                  97,
+                  116,
+                  102,
+                  111,
+                  114,
+                  109,
+                  95,
+                  102,
+                  101,
+                  101,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "platform_fee_recipient_0",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "platform_fee_recipient_1",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "platform_fee_recipient_2",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "platform_fee_recipient_3",
+          "writable": true,
+          "optional": true
+        }
+      ],
+      "args": [
+        {
+          "name": "quantity",
+          "type": "u8"
+        },
+        {
+          "name": "allowlist_proof",
+          "type": {
+            "vec": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        },
+        {
+          "name": "allowlist_leaf_index",
+          "type": "u32"
+        }
+      ]
+    },
+    {
+      "name": "pause",
+      "docs": [
+        "Pause minting (authority only). Use when something breaks or needs review."
+      ],
+      "discriminator": [
+        211,
+        22,
+        221,
+        251,
+        74,
+        121,
+        193,
+        47
+      ],
+      "accounts": [
+        {
+          "name": "collection",
+          "writable": true
+        },
+        {
+          "name": "authority",
+          "signer": true,
+          "relations": [
+            "collection"
+          ]
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "propose_registry_admin",
+      "docs": [
+        "Propose a new registry authority (current authority only).",
+        "Two-step rotation prevents lockout: the new key must accept before control transfers."
+      ],
+      "discriminator": [
+        172,
+        92,
+        244,
+        165,
+        53,
+        27,
+        19,
+        49
+      ],
+      "accounts": [
+        {
+          "name": "registry",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  101,
+                  103,
+                  105,
+                  115,
+                  116,
+                  114,
+                  121
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "authority",
+          "signer": true,
+          "relations": [
+            "registry"
+          ]
+        }
+      ],
+      "args": [
+        {
+          "name": "new_authority",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
+      "name": "resume",
+      "docs": [
+        "Resume minting (authority only). Use after fixing whatever caused the pause."
+      ],
+      "discriminator": [
+        1,
+        166,
+        51,
+        170,
+        127,
+        32,
+        141,
+        206
+      ],
+      "accounts": [
+        {
+          "name": "collection",
+          "writable": true
+        },
+        {
+          "name": "authority",
+          "signer": true,
+          "relations": [
+            "collection"
+          ]
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "should_freeze_nft",
+      "docs": [
+        "Check if a newly minted NFT should have FreezeDelegate applied.",
+        "Returns true when the collection's freeze conditions are active."
+      ],
+      "discriminator": [
+        170,
+        124,
+        202,
+        105,
+        60,
+        144,
+        62,
+        69
+      ],
+      "accounts": [
+        {
+          "name": "collection"
+        }
+      ],
+      "args": [],
+      "returns": "bool"
+    },
+    {
+      "name": "update_allowlist_root",
+      "docs": [
+        "Update allowlist Merkle root (authority only).",
+        "Set root to enforce allowlist-only minting; set to [0u8;32] to open public mint.",
+        "Emits AllowlistRootUpdated with old/new root and timestamp so off-chain observers",
+        "can detect root rotation and notify wallets whose proofs are now invalid."
+      ],
+      "discriminator": [
+        146,
+        254,
+        137,
+        203,
+        195,
+        234,
+        252,
+        42
+      ],
+      "accounts": [
+        {
+          "name": "collection",
+          "writable": true
+        },
+        {
+          "name": "authority",
+          "signer": true,
+          "relations": [
+            "collection"
+          ]
+        }
+      ],
+      "args": [
+        {
+          "name": "new_root",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "update_base_uri",
+      "docs": [
+        "Set or update the base URI in an optional PDA (authority only).",
+        "The PDA is only created when this is called — zero rent when unused.",
+        "Close it with close_collection_uri when the mint ends to reclaim rent."
+      ],
+      "discriminator": [
+        124,
+        52,
+        206,
+        52,
+        58,
+        207,
+        42,
+        158
+      ],
+      "accounts": [
+        {
+          "name": "collection",
+          "writable": true
+        },
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "collection"
+          ]
+        },
+        {
+          "name": "collection_uri",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  117,
+                  114,
+                  105
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "collection"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "new_base_uri",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "update_collection_status",
+      "docs": [
+        "Update collection lifecycle status (authority only).",
+        "0=draft, 1=preparing, 2=ready, 3=minting, 4=completed, 5=paused",
+        "Stored as u8 because a string would cost 10× the rent for the same information."
+      ],
+      "discriminator": [
+        96,
+        11,
+        220,
+        208,
+        77,
+        166,
+        74,
+        229
+      ],
+      "accounts": [
+        {
+          "name": "collection",
+          "writable": true
+        },
+        {
+          "name": "authority",
+          "signer": true,
+          "relations": [
+            "collection"
+          ]
+        }
+      ],
+      "args": [
+        {
+          "name": "status",
+          "type": "u8"
+        }
+      ]
+    },
+    {
+      "name": "update_config",
+      "docs": [
+        "Update minting configuration (authority only).",
+        "metadata_standard is immutable — changing it mid-collection breaks everything."
+      ],
+      "discriminator": [
+        29,
+        158,
+        252,
+        191,
+        10,
+        83,
+        219,
+        99
+      ],
+      "accounts": [
+        {
+          "name": "collection",
+          "writable": true
+        },
+        {
+          "name": "authority",
+          "signer": true,
+          "relations": [
+            "collection"
+          ]
+        }
+      ],
+      "args": [
+        {
+          "name": "new_config",
+          "type": {
+            "defined": {
+              "name": "CollectionConfig"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "update_featured",
+      "docs": [
+        "Feature or unfeature a collection on the homepage (platform authority only).",
+        "Gated against the registry authority — fixed from the original which had no check."
+      ],
+      "discriminator": [
+        224,
+        235,
+        195,
+        128,
+        231,
+        70,
+        1,
+        18
+      ],
+      "accounts": [
+        {
+          "name": "collection",
+          "writable": true
+        },
+        {
+          "name": "registry",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  101,
+                  103,
+                  105,
+                  115,
+                  116,
+                  114,
+                  121
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "authority",
+          "signer": true,
+          "relations": [
+            "registry"
+          ]
+        }
+      ],
+      "args": [
+        {
+          "name": "featured",
+          "type": "bool"
+        }
+      ]
+    },
+    {
+      "name": "update_metadata",
+      "docs": [
+        "Update collection metadata URI (authority only).",
+        "Upload the new metadata off-chain first, then call this."
+      ],
+      "discriminator": [
+        170,
+        182,
+        43,
+        239,
+        97,
+        78,
+        225,
+        186
+      ],
+      "accounts": [
+        {
+          "name": "collection",
+          "writable": true
+        },
+        {
+          "name": "authority",
+          "signer": true,
+          "relations": [
+            "collection"
+          ]
+        }
+      ],
+      "args": [
+        {
+          "name": "new_metadata_uri",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "update_mint_fund_splits",
+      "docs": [
+        "Configure mint fund splits (authority only).",
+        "Pass num=0 to disable splits and revert to single creator_wallet.",
+        "Shares must sum to 100. Recipients are paid in order as remaining_accounts during mint."
+      ],
+      "discriminator": [
+        68,
+        57,
+        173,
+        83,
+        67,
+        133,
+        118,
+        90
+      ],
+      "accounts": [
+        {
+          "name": "collection",
+          "writable": true
+        },
+        {
+          "name": "authority",
+          "signer": true,
+          "relations": [
+            "collection"
+          ]
+        },
+        {
+          "name": "mint_split_config",
+          "writable": true,
+          "optional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  112,
+                  108,
+                  105,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "collection"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "recipients",
+          "type": {
+            "array": [
+              "pubkey",
+              10
+            ]
+          }
+        },
+        {
+          "name": "shares",
+          "type": {
+            "array": [
+              "u8",
+              10
+            ]
+          }
+        },
+        {
+          "name": "num",
+          "type": "u8"
+        }
+      ]
+    },
+    {
+      "name": "update_mint_phase_schedule",
+      "docs": [
+        "Update the phase schedule before any mints occur (authority only)."
+      ],
+      "discriminator": [
+        107,
+        253,
+        178,
+        191,
+        109,
+        44,
+        195,
+        143
+      ],
+      "accounts": [
+        {
+          "name": "collection",
+          "writable": true
+        },
+        {
+          "name": "authority",
+          "signer": true,
+          "relations": [
+            "collection"
+          ]
+        },
+        {
+          "name": "phase_schedule",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  104,
+                  97,
+                  115,
+                  101,
+                  115
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "collection"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "entries",
+          "type": {
+            "vec": {
+              "defined": {
+                "name": "MintPhaseEntry"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "update_platform_fee",
+      "docs": [
+        "Update platform fee percentage (registry authority only).",
+        "Fee is in basis points: 500 = 5%. Hard cap: 1500 bps (15%).",
+        "Gated on the registry authority — only the platform can change this,",
+        "not individual collection creators."
+      ],
+      "discriminator": [
+        162,
+        97,
+        186,
+        47,
+        93,
+        113,
+        176,
+        243
+      ],
+      "accounts": [
+        {
+          "name": "collection",
+          "writable": true
+        },
+        {
+          "name": "registry",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  101,
+                  103,
+                  105,
+                  115,
+                  116,
+                  114,
+                  121
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "authority",
+          "signer": true,
+          "relations": [
+            "registry"
+          ]
+        }
+      ],
+      "args": [
+        {
+          "name": "new_fee_bps",
+          "type": "u16"
+        }
+      ]
+    },
+    {
+      "name": "update_platform_fee_config",
+      "docs": [
+        "Retune the platform fee: recipients, split percentages, the paid-mint rate, and",
+        "the flat free-mint fee. Registry authority only. Takes effect on the next mint —",
+        "no redeploy, no migration."
+      ],
+      "discriminator": [
+        134,
+        65,
+        80,
+        46,
+        206,
+        83,
+        198,
+        190
+      ],
+      "accounts": [
+        {
+          "name": "platform_fee_config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  108,
+                  97,
+                  116,
+                  102,
+                  111,
+                  114,
+                  109,
+                  95,
+                  102,
+                  101,
+                  101,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "registry",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  101,
+                  103,
+                  105,
+                  115,
+                  116,
+                  114,
+                  121
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "authority",
+          "signer": true,
+          "relations": [
+            "registry"
+          ]
+        }
+      ],
+      "args": [
+        {
+          "name": "recipients",
+          "type": {
+            "vec": "pubkey"
+          }
+        },
+        {
+          "name": "shares_bps",
+          "type": {
+            "vec": "u16"
+          }
+        },
+        {
+          "name": "free_mint_fee_lamports",
+          "type": "u64"
+        },
+        {
+          "name": "default_fee_bps",
+          "type": "u16"
+        }
+      ]
+    },
+    {
+      "name": "update_trading_freeze",
+      "docs": [
+        "Update trading freeze settings (authority only).",
+        "Can freeze until a specific timestamp, until sold out, or both."
+      ],
+      "discriminator": [
+        255,
+        42,
+        29,
+        215,
+        0,
+        229,
+        1,
+        203
+      ],
+      "accounts": [
+        {
+          "name": "collection",
+          "writable": true
+        },
+        {
+          "name": "authority",
+          "signer": true,
+          "relations": [
+            "collection"
+          ]
+        }
+      ],
+      "args": [
+        {
+          "name": "freeze_until_date",
+          "type": {
+            "option": "i64"
+          }
+        },
+        {
+          "name": "freeze_until_sold_out",
+          "type": "bool"
+        }
+      ]
+    }
+  ],
+  "accounts": [
+    {
+      "name": "Collection",
+      "discriminator": [
+        48,
+        160,
+        232,
+        205,
+        191,
+        207,
+        26,
+        141
+      ]
+    },
+    {
+      "name": "CollectionRegistry",
+      "discriminator": [
+        103,
+        157,
+        231,
+        9,
+        181,
+        43,
+        15,
+        106
+      ]
+    },
+    {
+      "name": "CollectionUri",
+      "discriminator": [
+        121,
+        25,
+        60,
+        243,
+        46,
+        133,
+        5,
+        64
+      ]
+    },
+    {
+      "name": "MintPhaseSchedule",
+      "discriminator": [
+        145,
+        196,
+        78,
+        112,
+        145,
+        55,
+        52,
+        42
+      ]
+    },
+    {
+      "name": "MintSplitConfig",
+      "discriminator": [
+        169,
+        57,
+        103,
+        31,
+        150,
+        143,
+        133,
+        25
+      ]
+    },
+    {
+      "name": "PlatformFeeConfig",
+      "discriminator": [
+        136,
+        239,
+        61,
+        163,
+        127,
+        253,
+        135,
+        139
+      ]
+    },
+    {
+      "name": "RoyaltyConfig",
+      "discriminator": [
+        43,
+        108,
+        34,
+        11,
+        206,
+        64,
+        166,
+        81
+      ]
+    },
+    {
+      "name": "WalletMintTracker",
+      "discriminator": [
+        182,
+        5,
+        180,
+        20,
+        177,
+        226,
+        48,
+        20
+      ]
+    },
+    {
+      "name": "WalletPhaseMintTracker",
+      "discriminator": [
+        121,
+        29,
+        195,
+        228,
+        102,
+        187,
+        194,
+        26
+      ]
+    }
+  ],
+  "events": [
+    {
+      "name": "AllowlistRootUpdated",
+      "discriminator": [
+        66,
+        208,
+        202,
+        83,
+        119,
+        62,
+        45,
+        227
+      ]
+    },
+    {
+      "name": "CollectionConfigUpdated",
+      "discriminator": [
+        234,
+        254,
+        3,
+        172,
+        87,
+        246,
+        183,
+        107
+      ]
+    },
+    {
+      "name": "EmergencyPause",
+      "discriminator": [
+        105,
+        91,
+        187,
+        159,
+        198,
+        176,
+        189,
+        87
+      ]
+    },
+    {
+      "name": "EmergencyUnpause",
+      "discriminator": [
+        7,
+        102,
+        82,
+        245,
+        98,
+        75,
+        161,
+        141
+      ]
+    },
+    {
+      "name": "PlatformFeeConfigUpdated",
+      "discriminator": [
+        241,
+        136,
+        204,
+        231,
+        30,
+        10,
+        106,
+        169
+      ]
+    },
+    {
+      "name": "PlatformFeeUpdated",
+      "discriminator": [
+        210,
+        134,
+        201,
+        4,
+        92,
+        228,
+        80,
+        26
+      ]
+    },
+    {
+      "name": "UpgradeCancelled",
+      "discriminator": [
+        89,
+        183,
+        130,
+        129,
+        170,
+        63,
+        1,
+        120
+      ]
+    },
+    {
+      "name": "UpgradeCompleted",
+      "discriminator": [
+        97,
+        103,
+        117,
+        146,
+        166,
+        243,
+        131,
+        131
+      ]
+    },
+    {
+      "name": "UpgradeInitiated",
+      "discriminator": [
+        63,
+        153,
+        80,
+        39,
+        138,
+        139,
+        57,
+        101
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "Unauthorized",
+      "msg": "Unauthorized"
+    },
+    {
+      "code": 6001,
+      "name": "InvalidStatus",
+      "msg": "Invalid collection status (must be 0-5)"
+    },
+    {
+      "code": 6002,
+      "name": "MetadataUriTooLong",
+      "msg": "Metadata URI exceeds maximum length (128 bytes)"
+    },
+    {
+      "code": 6003,
+      "name": "InvalidStartTime",
+      "msg": "Invalid start time — must be now or in the future; end time must be after start time"
+    },
+    {
+      "code": 6004,
+      "name": "InvalidSupply",
+      "msg": "Invalid supply — must be greater than zero"
+    },
+    {
+      "code": 6005,
+      "name": "InvalidFeePercentage",
+      "msg": "Invalid fee percentage — must be 0-1500 basis points (15% hard cap)"
+    },
+    {
+      "code": 6006,
+      "name": "InvalidMetadataStandard",
+      "msg": "Metadata standard is immutable after collection creation"
+    },
+    {
+      "code": 6007,
+      "name": "MintingPaused",
+      "msg": "Minting is paused"
+    },
+    {
+      "code": 6008,
+      "name": "MintingNotStarted",
+      "msg": "Minting has not started yet"
+    },
+    {
+      "code": 6009,
+      "name": "MintingEnded",
+      "msg": "Minting has ended"
+    },
+    {
+      "code": 6010,
+      "name": "SupplyExceeded",
+      "msg": "Supply exceeded"
+    },
+    {
+      "code": 6011,
+      "name": "MintLimitExceeded",
+      "msg": "Mint limit per wallet exceeded"
+    },
+    {
+      "code": 6012,
+      "name": "AllowlistRequired",
+      "msg": "Allowlist phase active: valid Merkle proof required"
+    },
+    {
+      "code": 6013,
+      "name": "AllowlistInvalid",
+      "msg": "Allowlist proof invalid or wallet not in allowlist"
+    },
+    {
+      "code": 6014,
+      "name": "AllowlistNotRequired",
+      "msg": "Public mint: do not pass an allowlist proof"
+    },
+    {
+      "code": 6015,
+      "name": "InvalidMintSplitCount",
+      "msg": "Invalid mint split count (must be 0-10)"
+    },
+    {
+      "code": 6016,
+      "name": "InvalidMintSplitSum",
+      "msg": "Mint split shares must sum to 100"
+    },
+    {
+      "code": 6017,
+      "name": "InvalidMintSplitAccounts",
+      "msg": "Invalid mint split: pass recipient wallets in order as remaining_accounts"
+    },
+    {
+      "code": 6018,
+      "name": "TradingFrozen",
+      "msg": "Trading is frozen"
+    },
+    {
+      "code": 6019,
+      "name": "TradingNotFrozen",
+      "msg": "Trading is not frozen"
+    },
+    {
+      "code": 6020,
+      "name": "NoPendingAuthority",
+      "msg": "No pending authority — call propose_registry_admin first"
+    },
+    {
+      "code": 6021,
+      "name": "MintingStillActive",
+      "msg": "Minting is still active — tracker can only be closed after sold out or end_time passed"
+    },
+    {
+      "code": 6022,
+      "name": "MathOverflow",
+      "msg": "Math overflow"
+    },
+    {
+      "code": 6023,
+      "name": "CollectionNameTooLong",
+      "msg": "Collection name exceeds maximum length (32 bytes)"
+    },
+    {
+      "code": 6024,
+      "name": "AssetNameTooLong",
+      "msg": "Asset name exceeds maximum length (32 bytes)"
+    },
+    {
+      "code": 6025,
+      "name": "AssetUriTooLong",
+      "msg": "Asset URI exceeds maximum length (128 bytes)"
+    },
+    {
+      "code": 6026,
+      "name": "InvalidMplCoreProgram",
+      "msg": "Invalid Metaplex Core program ID"
+    },
+    {
+      "code": 6027,
+      "name": "NftMintNotImplemented",
+      "msg": "NFT minting not implemented for this metadata standard"
+    },
+    {
+      "code": 6028,
+      "name": "InvalidCoreAssetAccounts",
+      "msg": "Invalid Core asset accounts — pass one signer asset keypair per quantity as remaining_accounts"
+    },
+    {
+      "code": 6029,
+      "name": "NoEmergencyPause",
+      "msg": "No emergency pause is currently active"
+    },
+    {
+      "code": 6030,
+      "name": "EmergencyPauseActive",
+      "msg": "Emergency pause is currently active - cannot perform this operation"
+    },
+    {
+      "code": 6031,
+      "name": "UpgradeDelayTooShort",
+      "msg": "Upgrade delay too short - minimum 24 hours required"
+    },
+    {
+      "code": 6032,
+      "name": "UpgradeDelayTooLong",
+      "msg": "Upgrade delay too long - maximum 7 days allowed"
+    },
+    {
+      "code": 6033,
+      "name": "NoUpgradeInProgress",
+      "msg": "No upgrade is currently in progress"
+    },
+    {
+      "code": 6034,
+      "name": "UpgradeDelayNotPassed",
+      "msg": "Upgrade delay period has not passed yet"
+    },
+    {
+      "code": 6035,
+      "name": "UpgradeInProgress",
+      "msg": "Upgrade is in progress - cannot perform this operation"
+    },
+    {
+      "code": 6036,
+      "name": "NoActiveMintPhase",
+      "msg": "No active mint phase for the current time"
+    },
+    {
+      "code": 6037,
+      "name": "InvalidPhaseSchedule",
+      "msg": "Invalid mint phase schedule"
+    },
+    {
+      "code": 6038,
+      "name": "PhaseScheduleLocked",
+      "msg": "Mint phase schedule is locked and cannot be changed"
+    },
+    {
+      "code": 6039,
+      "name": "PhaseScheduleRequired",
+      "msg": "This collection requires its mint phase schedule and wallet phase tracker"
+    },
+    {
+      "code": 6040,
+      "name": "InvalidRoyaltyPercentage",
+      "msg": "Royalty percentage must be between 0 and 10000 basis points"
+    },
+    {
+      "code": 6041,
+      "name": "InvalidRoyaltyWallet",
+      "msg": "A non-zero royalty requires a valid recipient wallet"
+    },
+    {
+      "code": 6042,
+      "name": "RoyaltyConfigRequired",
+      "msg": "This collection requires its royalty configuration account"
+    },
+    {
+      "code": 6043,
+      "name": "PayoutWalletNotRentExempt",
+      "msg": "Payout wallet is not rent-exempt; fund it before creating the collection"
+    },
+    {
+      "code": 6044,
+      "name": "InvalidPlatformFeeSplitCount",
+      "msg": "Invalid platform fee recipient count (must be 1-4, and match the shares array)"
+    },
+    {
+      "code": 6045,
+      "name": "InvalidPlatformFeeSplitSum",
+      "msg": "Platform fee shares must sum to 10000 basis points"
+    },
+    {
+      "code": 6046,
+      "name": "InvalidPlatformFeeAccounts",
+      "msg": "Invalid platform fee accounts — pass each configured recipient, in order, as writable"
+    }
+  ],
+  "types": [
+    {
+      "name": "AllowlistRootUpdated",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "collection",
+            "type": "pubkey"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          },
+          {
+            "name": "old_root",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "new_root",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "Collection",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "mint_authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "creator_wallet",
+            "type": "pubkey"
+          },
+          {
+            "name": "platform_wallet",
+            "type": "pubkey"
+          },
+          {
+            "name": "max_supply",
+            "type": "u64"
+          },
+          {
+            "name": "minted",
+            "type": "u64"
+          },
+          {
+            "name": "price",
+            "type": "u64"
+          },
+          {
+            "name": "start_time",
+            "type": "i64"
+          },
+          {
+            "name": "end_time",
+            "type": "i64"
+          },
+          {
+            "name": "freeze_until",
+            "type": "i64"
+          },
+          {
+            "name": "created_at",
+            "type": "i64"
+          },
+          {
+            "name": "platform_fee_bps",
+            "type": "u16"
+          },
+          {
+            "name": "allowlist_root",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "mint_limit_per_wallet",
+            "type": "u8"
+          },
+          {
+            "name": "metadata_standard",
+            "type": "u8"
+          },
+          {
+            "name": "flags",
+            "type": "u8"
+          },
+          {
+            "name": "status",
+            "type": "u8"
+          },
+          {
+            "name": "featured",
+            "type": "bool"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "metadata_uri",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "name": "CollectionConfig",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "max_supply",
+            "type": "u64"
+          },
+          {
+            "name": "price_per_nft",
+            "type": "u64"
+          },
+          {
+            "name": "start_time",
+            "type": "i64"
+          },
+          {
+            "name": "end_time",
+            "type": {
+              "option": "i64"
+            }
+          },
+          {
+            "name": "mint_limit_per_wallet",
+            "type": {
+              "option": "u8"
+            }
+          },
+          {
+            "name": "metadata_standard",
+            "type": {
+              "defined": {
+                "name": "MetadataStandard"
+              }
+            }
+          },
+          {
+            "name": "freeze_trading_until_date",
+            "type": {
+              "option": "i64"
+            }
+          },
+          {
+            "name": "freeze_trading_until_sold_out",
+            "type": "bool"
+          },
+          {
+            "name": "royalty_basis_points",
+            "type": "u16"
+          },
+          {
+            "name": "royalty_wallet",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "CollectionConfigUpdated",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "collection",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "CollectionRegistry",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "pending_authority",
+            "type": {
+              "option": "pubkey"
+            }
+          },
+          {
+            "name": "pending_upgrade_program",
+            "type": "pubkey"
+          },
+          {
+            "name": "upgrade_initiated_time",
+            "type": "i64"
+          },
+          {
+            "name": "upgrade_completion_time",
+            "type": "i64"
+          },
+          {
+            "name": "emergency_pause_time",
+            "type": "i64"
+          },
+          {
+            "name": "collections",
+            "type": {
+              "vec": "pubkey"
+            }
+          },
+          {
+            "name": "collection_count",
+            "type": "u32"
+          },
+          {
+            "name": "upgrade_state",
+            "type": "u8"
+          },
+          {
+            "name": "emergency_pause",
+            "type": "bool"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "CollectionUri",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "base_uri",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "name": "EmergencyPause",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "timestamp",
+            "type": "i64"
+          },
+          {
+            "name": "authority",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "EmergencyUnpause",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "timestamp",
+            "type": "i64"
+          },
+          {
+            "name": "authority",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "MetadataStandard",
+      "repr": {
+        "kind": "rust"
+      },
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Legacy"
+          },
+          {
+            "name": "Programmable"
+          },
+          {
+            "name": "Core"
+          },
+          {
+            "name": "Compressed"
+          },
+          {
+            "name": "SemiFungible"
+          },
+          {
+            "name": "Token2022"
+          },
+          {
+            "name": "NativeMetadata"
+          },
+          {
+            "name": "Custom"
+          }
+        ]
+      }
+    },
+    {
+      "name": "MintPhaseEntry",
+      "docs": [
+        "One scheduled mint phase — price, window, allowlist root, and per-phase wallet cap."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "start_time",
+            "type": "i64"
+          },
+          {
+            "name": "end_time",
+            "docs": [
+              "`Collection::DISABLED_I64` = until the next phase starts (last phase: until collection end)."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "price",
+            "type": "u64"
+          },
+          {
+            "name": "allowlist_root",
+            "docs": [
+              "`[0; 32]` = public mint for this phase."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "mint_limit_per_wallet",
+            "docs": [
+              "`0` = unlimited for this phase."
+            ],
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "MintPhaseSchedule",
+      "docs": [
+        "On-chain phase schedule PDA (`[\"phases\", collection]`)."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "num_phases",
+            "type": "u8"
+          },
+          {
+            "name": "locked",
+            "docs": [
+              "Set `true` after the first mint — schedule becomes immutable (anti-rug)."
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "phases",
+            "type": {
+              "array": [
+                {
+                  "defined": {
+                    "name": "MintPhaseEntry"
+                  }
+                },
+                8
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "MintSplitConfig",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "num",
+            "type": "u8"
+          },
+          {
+            "name": "recipients",
+            "type": {
+              "array": [
+                "pubkey",
+                10
+              ]
+            }
+          },
+          {
+            "name": "shares",
+            "type": {
+              "array": [
+                "u8",
+                10
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "PlatformFeeConfig",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "recipients",
+            "type": {
+              "array": [
+                "pubkey",
+                4
+              ]
+            }
+          },
+          {
+            "name": "free_mint_fee_lamports",
+            "type": "u64"
+          },
+          {
+            "name": "shares_bps",
+            "type": {
+              "array": [
+                "u16",
+                4
+              ]
+            }
+          },
+          {
+            "name": "default_fee_bps",
+            "type": "u16"
+          },
+          {
+            "name": "num",
+            "type": "u8"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PlatformFeeConfigUpdated",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "num",
+            "type": "u8"
+          },
+          {
+            "name": "default_fee_bps",
+            "type": "u16"
+          },
+          {
+            "name": "free_mint_fee_lamports",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PlatformFeeUpdated",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "collection",
+            "type": "pubkey"
+          },
+          {
+            "name": "old_fee_bps",
+            "type": "u16"
+          },
+          {
+            "name": "new_fee_bps",
+            "type": "u16"
+          }
+        ]
+      }
+    },
+    {
+      "name": "RoyaltyConfig",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "basis_points",
+            "type": "u16"
+          },
+          {
+            "name": "recipient",
+            "type": "pubkey"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "UpgradeCancelled",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "cancelled_program",
+            "type": "pubkey"
+          },
+          {
+            "name": "authority",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "UpgradeCompleted",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "old_program_id",
+            "type": "pubkey"
+          },
+          {
+            "name": "new_program_id",
+            "type": "pubkey"
+          },
+          {
+            "name": "completion_time",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "UpgradeInitiated",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "new_program_id",
+            "type": "pubkey"
+          },
+          {
+            "name": "completion_time",
+            "type": "i64"
+          },
+          {
+            "name": "authority",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "WalletMintTracker",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "minted",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "WalletPhaseMintTracker",
+      "docs": [
+        "Per-buyer mint counts indexed by phase (`[\"wallet_phase\", collection, buyer]`)."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "counts",
+            "type": {
+              "array": [
+                "u8",
+                8
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

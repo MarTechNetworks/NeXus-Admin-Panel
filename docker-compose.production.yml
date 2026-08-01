@@ -1,13 +1,35 @@
-version: '3.8'
-
+# Nexus admin console — production.
+#
+# NOT THE DEPLOY PATH. .github/workflows/deploy.yml runs
+# admin/deploy-zero-downtime.sh instead, which blue-greens the container across
+# host ports 3020/3030 and flips the nginx upstream. This file is kept for
+# manual bring-up and as the reference for what the running container looks
+# like — the script mirrors its network, loopback publish, resource limits and
+# healthcheck deliberately.
+#
+# Do not `docker compose up -d admin` against a live host: it claims the same
+# `container_name` and the same 3020 the script may currently have live, so it
+# will either fail on the name or strand the nginx upstream pointing at a port
+# nothing serves. Roll back with the script and an older image tag instead.
+#
+# IMPORTANT: NEXT_PUBLIC_* values are NOT set here. Next.js inlines them into the
+# client bundle at `pnpm build` time, so a runtime `environment:` entry has zero
+# effect — the previous version of this file set NEXT_PUBLIC_API_URL here and it
+# did nothing, which is exactly how the console shipped pointing at nowhere.
+# They are build args instead: see admin/Dockerfile and the `build-args:` block in
+# the deploy workflow. To change the API URL you rebuild the image.
 services:
   admin:
-    image: ghcr.io/yourusername/martech-admin:production
-    environment:
-      NEXT_PUBLIC_API_URL: https://yourdomain.com/api
-      NEXT_PUBLIC_APP_URL: https://yourdomain.com/admin
+    image: ghcr.io/martechnetworks/nexus-admin:production
+    container_name: nexus-admin
+    # 3020 on the host so it does not collide with the public frontend, which
+    # blue-greens across 3000/3010. nginx (infrastructure/nginx/nexus.conf)
+    # routes admin.nexus-web3.com here. Bound to loopback — nginx is the only
+    # thing that should reach it.
+    ports:
+      - "127.0.0.1:3020:3000"
     networks:
-      - martech-production
+      - martech-network
     restart: unless-stopped
     deploy:
       resources:
@@ -18,12 +40,17 @@ services:
           cpus: '0.25'
           memory: 256M
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      # /login is the only route that renders without a session; / redirects.
+      # wget, not curl — the runner stage is node:20-alpine, which ships busybox
+      # wget but no curl, so the old `curl -f` healthcheck could never pass.
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:3000/login"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 30s
 
 networks:
-  martech-production:
+  # Shared with the backend stack (Backend/docker-compose.yml) rather than a
+  # martech-production network that nothing else in this repo creates.
+  martech-network:
     external: true
