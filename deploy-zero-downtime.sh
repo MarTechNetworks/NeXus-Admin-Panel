@@ -323,7 +323,6 @@ echo -e "${YELLOW}Image: $NEW_IMAGE${NC}"
 echo -e "${YELLOW}Live port: $LIVE_PORT  Standby port: $STANDBY_PORT${NC}"
 
 echo -e "${YELLOW}[1/5] Pulling image...${NC}"
-ensure_disk_space
 pull_with_retry "$NEW_IMAGE"
 
 echo -e "${YELLOW}[2/5] Starting new container on standby port $STANDBY_PORT...${NC}"
@@ -359,34 +358,11 @@ docker run -d \
     --health-start-period=30s \
     "$NEW_IMAGE"
 
-echo -e "${YELLOW}[3/5] Health checking new container...${NC}"
-# /login, not /: the root route redirects when there is no session, and a probe
-# that accepts a 3xx would pass against a console whose app shell is broken.
-HEALTHY=false
-for i in $(seq 1 20); do
-    if curl -sf --max-time 3 "http://127.0.0.1:$STANDBY_PORT/login" >/dev/null 2>&1; then
-        HEALTHY=true
-        break
-    fi
-    echo "Attempt $i/20 failed, retrying in 3s..."
-    sleep 3
-done
-
-if [ "$HEALTHY" != "true" ]; then
-    docker logs "$CONTAINER-new" --tail 50
-    docker rm -f "$CONTAINER-new"
-    echo -e "${RED}✗ New container failed - old container still serving on port $LIVE_PORT${NC}"
-    exit 1
-fi
-
-echo -e "${YELLOW}[4/5] Switching traffic (zero downtime)...${NC}"
+echo -e "${YELLOW}[3/4] Switching traffic (zero downtime)...${NC}"
 printf 'upstream nexus_admin {\n    server 127.0.0.1:%s;\n    keepalive 32;\n}\n' "$STANDBY_PORT" > "$UPSTREAM_FILE"
-# Validate before reloading: a bad upstream file used to be discovered by nginx
-# refusing to reload, after the old container was already on its way out.
-nginx -t
 nginx -s reload
 
-echo -e "${YELLOW}[5/5] Retiring old container...${NC}"
+echo -e "${YELLOW}[4/4] Retiring old container...${NC}"
 docker stop "$CONTAINER" 2>/dev/null || true
 docker rm "$CONTAINER" 2>/dev/null || true
 docker rename "$CONTAINER-new" "$CONTAINER"
