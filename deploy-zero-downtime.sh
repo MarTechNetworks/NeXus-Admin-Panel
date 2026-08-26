@@ -358,17 +358,76 @@ docker run -d \
     --health-start-period=30s \
     "$NEW_IMAGE"
 
-echo -e "${YELLOW}[3/4] Switching traffic (zero downtime)...${NC}"
+# Health-gate the cutover.
+#
+# This step did not exist: the script defined the --health-cmd above and then
+# repointed nginx immediately, without ever reading the result. A container that
+# was still booting -- or one that would never come up at all, because the image
+# was bad -- got production traffic the instant `docker run` returned, which is
+# an outage the blue-green dance is specifically supposed to prevent.
+#
+# Polling curl from the host rather than `docker inspect .State.Health.Status`:
+# the docker healthcheck is on a 30s interval with a 30s start period, so the
+# first verdict is ~60s away even when the app is serving in 8s. Probing the
+# published loopback port directly gets the same answer in ~1s and additionally
+# proves the port publish itself works, which the in-container check cannot.
+# The --health-cmd stays for the runtime signal `docker ps` reports afterwards.
+echo -e "${YELLOW}[3/5] Health checking the new container...${NC}"
+HEALTHY=false
+for i in $(seq 1 20); do
+    if curl -sf --max-time 3 "http://127.0.0.1:$STANDBY_PORT/login" >/dev/null 2>&1; then
+        HEALTHY=true
+        break
+    fi
+    echo "Attempt $i/20 failed, retrying in 3s..."
+    sleep 3
+done
+
+if [ "$HEALTHY" != "true" ]; then
+    docker logs "$CONTAINER-new" --tail 50
+    docker rm -f "$CONTAINER-new"
+    echo -e "${RED}✗ New container failed its health check${NC}"
+    echo -e "${GREEN}  Nothing was switched - the old container is still serving.${NC}"
+    exit 1
+fi
+echo -e "${GREEN}✓ New container is healthy${NC}"
+
+echo -e "${YELLOW}[4/5] Switching traffic (zero downtime)...${NC}"
 printf 'upstream nexus_admin {\n    server 127.0.0.1:%s;\n    keepalive 32;\n}\n' "$STANDBY_PORT" > "$UPSTREAM_FILE"
+# Validate before reloading, as the frontend script does. A bad upstream file is
+# otherwise discovered by nginx refusing the reload, at which point the old
+# container is already on its way out and traffic has nowhere to go.
+nginx -t
 nginx -s reload
 
-echo -e "${YELLOW}[4/4] Retiring old container...${NC}"
-docker stop "$CONTAINER" 2>/dev/null || true
-docker rm "$CONTAINER" 2>/dev/null || true
+echo -e "${YELLOW}[5/5] Retiring old container...${NC}"
+# stop, then rename the retired one aside rather than removing it -- the frontend
+# script's rollback posture, ported here. `docker rm` left nothing to go back to:
+# recovering meant re-pulling the previous image, which is exactly what is not
+# available on the deploy where the registry or the disk is the thing that broke.
+#
+# reclaim_disk below is written to respect this: the image the retired container
+# pins sits inside the keep-N window, so cleanup_old_images reports it as
+# "pinned by a container, kept". The previous generation's -prev is removed on
+# the first line below, before this run's is created, so exactly one rollback
+# generation is ever held -- which is what KEEP_IMAGES=2 budgets for.
+docker rm -f "$CONTAINER-prev" 2>/dev/null || true
+if docker ps -a --format '{{.Names}}' | grep -qx "$CONTAINER"; then
+    # Clear the restart policy before stopping: it was created `unless-stopped`,
+    # and a dockerd restart would otherwise resurrect it onto the port the new
+    # container now owns, where it would lose the bind race silently.
+    docker update --restart no "$CONTAINER" >/dev/null 2>&1 || true
+    docker stop "$CONTAINER" >/dev/null 2>&1 || true
+    docker rename "$CONTAINER" "$CONTAINER-prev" 2>/dev/null || true
+fi
 docker rename "$CONTAINER-new" "$CONTAINER"
 docker update --restart unless-stopped "$CONTAINER"
 
 echo -e "${GREEN}✓ Admin console live on port $STANDBY_PORT${NC}"
+echo -e "${YELLOW}  Roll back by hand if the registry is the problem:${NC}"
+echo -e "${YELLOW}    docker rm -f $CONTAINER && docker rename $CONTAINER-prev $CONTAINER${NC}"
+echo -e "${YELLOW}    docker start $CONTAINER${NC}"
+echo -e "${YELLOW}    # then repoint $UPSTREAM_FILE at the old port and: nginx -t && nginx -s reload${NC}"
 
 echo -e "${YELLOW}Cleaning up old Docker images (keeping newest $KEEP_IMAGES per repo)...${NC}"
 reclaim_disk
