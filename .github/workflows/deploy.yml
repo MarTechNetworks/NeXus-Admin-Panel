@@ -37,7 +37,16 @@ jobs:
       #
       # amd64 only: the VPS is x86, and the arm64 leg doubled build time for an
       # image nothing pulls. Matches Frontend/.github/workflows/ci.yml.
+      #
+      # Attempt 1 of 2. The image builds fine; what fails intermittently is the
+      # upload -- ghcr answers the blob HEAD during layer push with a bare
+      # 403 Forbidden, minutes after the same layers pushed cleanly with the same
+      # token. It is registry-side, so the only real fix is to try again.
+      # continue-on-error keeps a failed attempt from ending the job; the retry
+      # below re-raises it for real.
       - name: Build and push Docker image
+        id: push_attempt_1
+        continue-on-error: true
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -55,7 +64,45 @@ jobs:
             ${{ env.IMAGE }}:latest
             ${{ env.IMAGE }}:${{ github.sha }}
           cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # mode=min, not max. max exports EVERY intermediate layer of every
+          # stage to the GHA cache -- hundreds of MB uploaded at the end of each
+          # run, serialised after the build and regularly the slowest step in
+          # the job. min exports only the final stage's layers. timeout caps the
+          # export so a slow cache backend cannot hold the job open; a timed-out
+          # export is a warning, not a failure.
+          cache-to: type=gha,mode=min,timeout=5m
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          # Skip the attestation manifests. Nothing on the host consumes them and
+          # they add a second manifest push per tag.
+          provenance: false
+          sbom: false
+          build-args: |
+            NEXT_PUBLIC_API_URL=${{ vars.NEXT_PUBLIC_API_URL || 'https://api.nexus-web3.com' }}
+            NEXT_PUBLIC_IPFS_GATEWAY=${{ vars.NEXT_PUBLIC_IPFS_GATEWAY || 'https://ipfs-gateway.nexus-web3.com/ipfs/' }}
+
+      # Attempt 2 of 2. Runs only when the first push failed. The builder still
+      # holds every layer from attempt 1, so this re-push costs seconds rather
+      # than a rebuild. No continue-on-error: if this one fails the job fails,
+      # which is what should happen when ghcr is genuinely broken, not flaky.
+      #
+      # The inputs are duplicated verbatim rather than shared via a YAML anchor:
+      # GitHub Actions does not resolve anchors/aliases in workflow files. Keep
+      # the two blocks in sync by hand.
+      - name: Build and push Docker image (retry)
+        if: steps.push_attempt_1.outcome == 'failure'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          target: runner
+          tags: |
+            ${{ env.IMAGE }}:latest
+            ${{ env.IMAGE }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=min,timeout=5m
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          provenance: false
+          sbom: false
           build-args: |
             NEXT_PUBLIC_API_URL=${{ vars.NEXT_PUBLIC_API_URL || 'https://api.nexus-web3.com' }}
             NEXT_PUBLIC_IPFS_GATEWAY=${{ vars.NEXT_PUBLIC_IPFS_GATEWAY || 'https://ipfs-gateway.nexus-web3.com/ipfs/' }}
