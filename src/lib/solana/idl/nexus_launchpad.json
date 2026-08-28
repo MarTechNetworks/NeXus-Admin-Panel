@@ -1,5 +1,5 @@
 {
-  "address": "7bBNnJvH2CoAh85LJ8ByWPS7GwYNh3F1TWbCYiCycZWx",
+  "address": "377CgQpCQVqd2Lj65ewtxfACYfgYLV3fijQGRWJZBS4y",
   "metadata": {
     "name": "nexus_launchpad",
     "version": "0.1.0",
@@ -1131,7 +1131,10 @@
         "Payment goes directly to platform_wallet (fee) and creator_wallet (remainder).",
         "No escrow. No intermediate accounts. Just math and two transfers.",
         "When has_split is set, the creator amount is split across up to 10 recipients",
-        "passed as remaining_accounts in order: [buyer, recipient_0, ..., recipient_n-1]."
+        "passed as remaining_accounts in order: [buyer, recipient_0, ..., recipient_n-1].",
+        "`phase_index` names the phase the buyer chose on the drop page. Phases may run",
+        "concurrently, so the clock alone cannot identify one; `None` falls back to the",
+        "lowest-indexed phase that is open right now."
       ],
       "discriminator": [
         51,
@@ -1439,6 +1442,12 @@
         {
           "name": "allowlist_leaf_index",
           "type": "u32"
+        },
+        {
+          "name": "phase_index",
+          "type": {
+            "option": "u8"
+          }
         }
       ]
     },
@@ -2638,36 +2647,51 @@
     },
     {
       "code": 6040,
+      "name": "InvalidPhaseIndex",
+      "msg": "Mint phase index is out of range for this collection"
+    },
+    {
+      "code": 6041,
+      "name": "PhaseNotStarted",
+      "msg": "The selected mint phase has not started yet"
+    },
+    {
+      "code": 6042,
+      "name": "PhaseEnded",
+      "msg": "The selected mint phase has already ended"
+    },
+    {
+      "code": 6043,
       "name": "InvalidRoyaltyPercentage",
       "msg": "Royalty percentage must be between 0 and 10000 basis points"
     },
     {
-      "code": 6041,
+      "code": 6044,
       "name": "InvalidRoyaltyWallet",
       "msg": "A non-zero royalty requires a valid recipient wallet"
     },
     {
-      "code": 6042,
+      "code": 6045,
       "name": "RoyaltyConfigRequired",
       "msg": "This collection requires its royalty configuration account"
     },
     {
-      "code": 6043,
+      "code": 6046,
       "name": "PayoutWalletNotRentExempt",
       "msg": "Payout wallet is not rent-exempt; fund it before creating the collection"
     },
     {
-      "code": 6044,
+      "code": 6047,
       "name": "InvalidPlatformFeeSplitCount",
       "msg": "Invalid platform fee recipient count (must be 1-4, and match the shares array)"
     },
     {
-      "code": 6045,
+      "code": 6048,
       "name": "InvalidPlatformFeeSplitSum",
       "msg": "Platform fee shares must sum to 10000 basis points"
     },
     {
-      "code": 6046,
+      "code": 6049,
       "name": "InvalidPlatformFeeAccounts",
       "msg": "Invalid platform fee accounts — pass each configured recipient, in order, as writable"
     }
@@ -3024,7 +3048,12 @@
           {
             "name": "end_time",
             "docs": [
-              "`Collection::DISABLED_I64` = until the next phase starts (last phase: until collection end)."
+              "`Collection::DISABLED_I64` = open-ended; the phase runs until the collection ends.",
+              "",
+              "This used to mean \"until the next phase starts\". Phases may now run concurrently",
+              "and the buyer picks which one to mint from, so chaining a phase's end to its",
+              "neighbour's start no longer has a meaning — a creator who wants the allowlist to",
+              "close when the public sale opens says so with an explicit end time."
             ],
             "type": "i64"
           },
