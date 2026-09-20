@@ -206,7 +206,6 @@ export default function PlatformPage() {
   ]
 
   const cfg = config.data
-  const feePct = cfg ? (cfg.platformFeeBps / 100).toFixed(2) : null
 
   return (
     <MainLayout
@@ -271,12 +270,9 @@ export default function PlatformPage() {
                     <Row label="Platform wallet" value={cfg.platformWallet} mono copyable={cfg.platformWallet} />
                     <Row
                       label="Platform fee"
-                      value={`${feePct}% (${cfg.platformFeeBps} bps, ${cfg.feeModel})`}
+                      value={`${cfg.platformFeeSol} SOL per NFT (${cfg.platformFeeLamports.toLocaleString()} lamports, ${cfg.feeType ?? 'flat'}, ${cfg.feeModel}) — every mint, free or paid`}
                       tone={CYAN}
                     />
-                    {cfg.freeMintPlatformFeeSol != null && (
-                      <Row label="Free-mint fee" value={`${cfg.freeMintPlatformFeeSol} SOL per NFT`} />
-                    )}
                   </Rows>
                 )}
               </Card>

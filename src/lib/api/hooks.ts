@@ -12,6 +12,7 @@ import type {
   AdminStats,
   AdminUser,
   AuditEntry,
+  AuthUser,
   Collection,
   CollectionsPage,
   ContractStatus,
@@ -402,6 +403,68 @@ export function useUpdateAdminUser(
       qc.invalidateQueries({ queryKey: ['admin-users'] })
       qc.invalidateQueries({ queryKey: ['audit'] })
     },
+    ...options,
+  })
+}
+
+// ── Account security (self-service) ─────────────────────────────────────────
+// Backend/src/auth/auth.controller.ts — any signed-in admin for change/cancel,
+// public + throttled for forgot/reset/verify (those arrive from a mailed link).
+
+export function useChangePassword(
+  options?: UseMutationOptions<
+    { token: string; expiresIn: number },
+    Error,
+    { currentPassword: string; newPassword: string }
+  >
+) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (data) => api.post<{ token: string; expiresIn: number }>(endpoints.auth.changePassword, data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['audit'] }),
+    ...options,
+  })
+}
+
+export function useForgotPassword(options?: UseMutationOptions<{ ok: true }, Error, { email: string }>) {
+  return useMutation({
+    mutationFn: (data) => api.post<{ ok: true }>(endpoints.auth.forgotPassword, data),
+    ...options,
+  })
+}
+
+export function useResetPassword(
+  options?: UseMutationOptions<{ ok: true }, Error, { token: string; newPassword: string }>
+) {
+  return useMutation({
+    mutationFn: (data) => api.post<{ ok: true }>(endpoints.auth.resetPassword, data),
+    ...options,
+  })
+}
+
+export function useRequestEmailChange(
+  options?: UseMutationOptions<AuthUser, Error, { newEmail: string; currentPassword: string }>
+) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (data) => api.post<AuthUser>(endpoints.auth.changeEmail, data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['audit'] }),
+    ...options,
+  })
+}
+
+export function useCancelEmailChange(options?: UseMutationOptions<AuthUser, Error, void>) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: () => api.delete<AuthUser>(endpoints.auth.changeEmail),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['audit'] }),
+    ...options,
+  })
+}
+
+export function useVerifyEmail(options?: UseMutationOptions<{ email: string }, Error, { token: string }>) {
+  return useMutation({
+    mutationFn: (data) => api.post<{ email: string }>(endpoints.auth.verifyEmail, data),
     ...options,
   })
 }

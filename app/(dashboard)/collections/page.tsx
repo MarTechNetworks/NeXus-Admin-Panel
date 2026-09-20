@@ -623,8 +623,8 @@ function CollectionDrawer({
             <Row
               label="Platform Fee"
               value={
-                collection.platformFeeBasisPoints != null
-                  ? `${collection.platformFeeBasisPoints / 100}%`
+                collection.platformFeeLamports != null
+                  ? `${collection.platformFeeLamports / 1e9} SOL per NFT`
                   : '—'
               }
             />

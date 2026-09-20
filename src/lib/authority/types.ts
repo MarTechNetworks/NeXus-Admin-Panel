@@ -55,8 +55,8 @@ export interface FeeRecipientSnapshot {
 
 export interface PlatformFeeConfigSnapshot {
   exists: boolean
-  defaultFeeBps: number
-  freeMintFeeLamports: string
+  /** Flat platform fee per NFT, lamports, as a decimal string (u64-safe). */
+  feeLamports: string
   recipients: FeeRecipientSnapshot[]
 }
 
@@ -66,7 +66,8 @@ export interface CollectionSnapshot {
   /** The mint seed, which is what the DB stores as mintAddress. */
   mint: string
   authority: string
-  platformFeeBps: number
+  /** This collection's frozen flat fee per NFT, lamports, as a decimal string. */
+  platformFeeLamports: string
   featured: boolean
   status: number
   flags: number
@@ -88,7 +89,7 @@ export interface AuthoritySnapshot {
   feeConfig: PlatformFeeConfigSnapshot
   collections: CollectionSnapshot[]
   /** Backend-reported defaults, shown as context next to the on-chain values. */
-  backendFeeBps: number
+  backendFeeLamports: number
   backendPlatformWallet: string
   network: string
   fetchedAt: number
@@ -105,15 +106,17 @@ export interface FeeRecipientDraft {
 export type UpgradeAction = 'none' | 'initiate' | 'cancel' | 'complete'
 
 export interface CollectionOverrideDraft {
-  platformFeeBps: number
+  /** Per-collection flat fee, entered in SOL (string so "0.01" round-trips exactly). */
+  platformFeeSol: string
   featured: boolean
 }
 
 export interface AuthorityDraft {
-  /** Platform cut on paid mints, in basis points (≤ 1500). */
-  defaultFeeBps: number
-  /** Flat fee per NFT on zero-price mints, entered in SOL. */
-  freeMintFeeSol: string
+  /**
+   * Flat platform fee per NFT on every mint, entered in SOL (≤ 1). Stamped on
+   * collections created after the change; existing ones are repriced per row below.
+   */
+  feeSol: string
   recipients: FeeRecipientDraft[]
   /**
    * Only meaningful when the PlatformFeeConfig PDA does not exist yet: creating

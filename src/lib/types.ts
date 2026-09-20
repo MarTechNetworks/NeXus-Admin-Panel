@@ -30,7 +30,8 @@ export interface Collection {
   mintAddress?: string
   txSignature?: string
   royaltyBasisPoints?: number
-  platformFeeBasisPoints?: number
+  /** Flat platform fee per NFT in lamports, frozen on-chain at creation. */
+  platformFeeLamports?: number
   twitterUrl?: string
   discordUrl?: string
   websiteUrl?: string
@@ -68,6 +69,10 @@ export interface AuthUser {
   email: string
   displayName: string
   role: AdminRole
+  /** A new login email waiting for its verification link to be clicked (GET /me). */
+  pendingEmail?: string | null
+  passwordChangedAt?: string | null
+  lastLoginAt?: string | null
 }
 
 export interface AdminUser {
@@ -76,7 +81,9 @@ export interface AdminUser {
   displayName: string
   role: AdminRole
   disabled: boolean
-  lastLoginAt?: string
+  lastLoginAt?: string | null
+  pendingEmail?: string | null
+  passwordChangedAt?: string | null
   createdAt: string
   updatedAt: string
 }
@@ -95,7 +102,9 @@ export interface RevenueSummary {
   treasuryBalance: number | null
   expectedAccrued: number
   treasuryDrift: number | null
-  defaultFeeBps: number
+  /** Flat per-NFT fee applied to rows with no stored rate — lamports and SOL. */
+  defaultFeeLamports: number
+  defaultFeeSol: number
 }
 
 export interface RevenueByCollectionRow {
@@ -108,7 +117,7 @@ export interface RevenueByCollectionRow {
   minted: number
   totalSupply: number
   price: number | null
-  platformFeeBps: number
+  platformFeeLamports: number
   feeRevenue: number
 }
 
@@ -152,6 +161,8 @@ export interface HealthReport {
   solana: 'connected' | 'disconnected' | 'unknown'
   /** Redis is fail-open, so this is observability only — it never degrades `status`. */
   redis: 'connected' | 'disconnected' | 'unknown'
+  /** SMTP relay for password-reset mail. `disabled` = MAIL_TRANSPORT=log (dev). */
+  mail?: 'connected' | 'disconnected' | 'disabled' | 'unknown'
   solanaNetwork?: string
 }
 
@@ -170,12 +181,14 @@ export interface SolanaConfig {
   programId: string
   mplCoreProgramId: string
   allowlistProgramId?: string
-  platformFeeBps: number
+  /** Flat platform fee per NFT on every mint. */
+  platformFeeLamports: number
+  platformFeeSol: number
+  maxPlatformFeeLamports?: number
   platformWallet: string
   feeModel: string
-  freeMintPlatformFeeLamports?: number
-  freeMintPlatformFeeSol?: number
-  platformFeeSplit?: { wallet: string; basisPoints: number }[]
+  feeType?: 'flat' | 'percent'
+  platformFeeSplit?: { address: string; shareBps: number }[]
 }
 
 /** GET /api/solana/network — live RPC introspection. */

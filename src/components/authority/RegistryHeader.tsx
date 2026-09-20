@@ -26,7 +26,7 @@ import { Button } from '@/components/ui/Button'
 import { StatCard } from '@/components/dashboard/StatCard'
 import { SectionHeading } from '@/components/dashboard/SectionHeading'
 import { WalletButton } from './WalletConnect'
-import { bpsToPercent, formatCountdown, formatUnixTime, shortAddress } from '@/lib/authority/format'
+import { bpsToPercent, formatCountdown, formatSolAmount, formatUnixTime, shortAddress } from '@/lib/authority/format'
 import { UPGRADE_STATE } from '@/lib/solana/program'
 import type { AuthoritySnapshot } from '@/lib/authority/types'
 
@@ -220,11 +220,11 @@ export function RegistryHeader({
             icon={Coins}
             accent={GREEN}
             valueColor={GREEN}
-            label="Paid-mint fee"
-            value={bpsToPercent(snapshot.feeConfig.defaultFeeBps)}
+            label="Platform fee / NFT"
+            value={formatSolAmount(snapshot.feeConfig.feeLamports)}
             sub={
               snapshot.feeConfig.exists
-                ? 'From the fee-config PDA'
+                ? 'Flat, every mint — from the fee-config PDA'
                 : 'Backend default — no PDA on chain yet'
             }
           />

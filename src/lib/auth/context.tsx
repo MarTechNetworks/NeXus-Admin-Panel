@@ -35,6 +35,10 @@ interface AuthContextValue {
   hasRole: (...roles: AdminRole[]) => boolean
   login: (email: string, password: string) => Promise<void>
   logout: () => void
+  /** Re-read GET /me — after an email change starts, is cancelled, or completes. */
+  refresh: () => Promise<void>
+  /** Swap in a token the backend just issued (a password change returns a fresh one). */
+  setSessionToken: (token: string) => void
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
@@ -90,6 +94,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null)
   }, [])
 
+  const refresh = useCallback(async () => {
+    if (!getToken()) return
+    try {
+      setUser(await api.get<AuthUser>(endpoints.auth.me))
+    } catch {
+      // A 401 is already handled by the client: token dropped, bounced to /login.
+    }
+  }, [])
+
+  const setSessionToken = useCallback((token: string) => setToken(token), [])
+
   const value = useMemo(
     () => ({
       user,
@@ -100,8 +115,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       hasRole,
       login,
       logout,
+      refresh,
+      setSessionToken,
     }),
-    [user, isLoading, hasPermission, hasRole, login, logout]
+    [user, isLoading, hasPermission, hasRole, login, logout, refresh, setSessionToken]
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

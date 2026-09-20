@@ -14,12 +14,15 @@ export interface ChainConfig {
   programId: string
   mplCoreProgramId: string
   allowlistProgramId: string
-  platformFeeBps: number
-  freeMintPlatformFeeLamports: number
-  freeMintPlatformFeeSol: number
+  /** Flat platform fee per NFT on every mint — lamports and the same value in SOL. */
+  platformFeeLamports: number
+  platformFeeSol: number
+  /** Program-enforced ceiling on the per-NFT fee (1 SOL). */
+  maxPlatformFeeLamports: number
   platformWallet: string
   platformFeeSplit?: Array<{ address: string; shareBps: number }>
   feeModel: 'additive' | 'subtractive'
+  feeType: 'flat' | 'percent'
 }
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? ''

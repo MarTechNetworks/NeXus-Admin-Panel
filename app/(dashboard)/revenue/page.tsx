@@ -131,7 +131,7 @@ export default function RevenuePage() {
         {summary && (
           <p className="mt-3 text-xs" style={{ color: '#6a6a7a' }}>
             Treasury wallet <span style={{ color: '#b8b8c8' }}>{summary.treasuryWallet}</span> · default fee{' '}
-            {(summary.defaultFeeBps / 100).toFixed(2)}% · {summary.paidCollections} paid /{' '}
+            {summary.defaultFeeSol} SOL per NFT (flat, every mint) · {summary.paidCollections} paid /{' '}
             {summary.freeCollections} free collections
           </p>
         )}
@@ -265,7 +265,7 @@ export default function RevenuePage() {
           <table className="min-w-full divide-y" style={{ borderColor: GRID }}>
             <thead style={{ background: '#1a1a24' }}>
               <tr>
-                {['Collection', 'Creator', 'Minted', 'Price', 'Fee %', 'Fee Revenue'].map((h) => (
+                {['Collection', 'Creator', 'Minted', 'Price', 'Fee / NFT', 'Fee Revenue'].map((h) => (
                   <th key={h} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider" style={{ color: '#8a8a9a' }}>
                     {h}
                   </th>
@@ -284,7 +284,7 @@ export default function RevenuePage() {
                     <td className="px-4 py-3 text-sm" style={{ color: '#8a8a9a' }}>{c.creator}</td>
                     <td className="px-4 py-3 text-sm">{c.minted}{c.totalSupply ? ` / ${c.totalSupply}` : ''}</td>
                     <td className="px-4 py-3 text-sm">{c.price ? fmtSol(c.price) : 'Free'}</td>
-                    <td className="px-4 py-3 text-sm">{(c.platformFeeBps / 100).toFixed(2)}%</td>
+                    <td className="px-4 py-3 text-sm">{fmtSol(c.platformFeeLamports / 1e9)}</td>
                     <td className="px-4 py-3 text-sm font-semibold" style={{ color: c.feeRevenue > 0 ? GREEN : '#8a8a9a' }}>{fmtSol(c.feeRevenue)}</td>
                   </tr>
                 ))

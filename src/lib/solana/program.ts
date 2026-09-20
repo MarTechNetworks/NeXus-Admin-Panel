@@ -63,8 +63,12 @@ export function deriveCollectionPda(mintSeed: PublicKey, programId: PublicKey): 
 
 // ── Program constants mirrored from the Rust ─────────────────────────────────
 
-/** Hard cap enforced by write_platform_fee_config / update_platform_fee. */
-export const MAX_PLATFORM_FEE_BPS = 1_500
+/**
+ * Hard cap on the flat per-NFT platform fee, in lamports (1 SOL), enforced by
+ * write_platform_fee_config / update_platform_fee. Was 1500 bps under the old
+ * percentage model.
+ */
+export const MAX_PLATFORM_FEE_LAMPORTS = 1_000_000_000
 /** PlatformFeeConfig::recipients is a fixed [Pubkey; 4]. */
 export const MAX_PLATFORM_FEE_RECIPIENTS = 4
 /** Platform fee shares are basis points and must sum to exactly this. */
@@ -126,9 +130,9 @@ export interface RegistryAccount {
 
 export interface PlatformFeeConfigAccount {
   recipients: PublicKey[]
-  freeMintFeeLamports: Bnish
+  /** Flat platform fee per NFT, lamports. Copied into each collection at creation. */
+  feeLamports: Bnish
   sharesBps: number[]
-  defaultFeeBps: number
   num: number
   bump: number
 }
@@ -146,7 +150,8 @@ export interface CollectionAccount {
   endTime: Bnish
   freezeUntil: Bnish
   createdAt: Bnish
-  platformFeeBps: number
+  /** Flat platform fee per NFT, lamports — frozen at create_collection. */
+  platformFeeLamports: Bnish
   allowlistRoot: number[]
   mintLimitPerWallet: number
   metadataStandard: number

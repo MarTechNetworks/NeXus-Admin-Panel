@@ -8,7 +8,7 @@
  */
 import {
   MAX_COLLECTIONS,
-  MAX_PLATFORM_FEE_BPS,
+  MAX_PLATFORM_FEE_LAMPORTS,
   MAX_PLATFORM_FEE_RECIPIENTS,
   MAX_UPGRADE_DELAY_SECONDS,
   MIN_UPGRADE_DELAY_SECONDS,
@@ -38,12 +38,11 @@ export type RentReport = { address: string; lamports: number; rentExempt: boolea
 export function draftFromSnapshot(snapshot: AuthoritySnapshot): AuthorityDraft {
   const collections: AuthorityDraft['collections'] = {}
   for (const c of snapshot.collections) {
-    collections[c.pda] = { platformFeeBps: c.platformFeeBps, featured: c.featured }
+    collections[c.pda] = { platformFeeSol: lamportsToSol(c.platformFeeLamports), featured: c.featured }
   }
 
   return {
-    defaultFeeBps: snapshot.feeConfig.defaultFeeBps,
-    freeMintFeeSol: lamportsToSol(snapshot.feeConfig.freeMintFeeLamports),
+    feeSol: lamportsToSol(snapshot.feeConfig.feeLamports),
     recipients: snapshot.feeConfig.recipients.map((r) => ({ ...r })),
     createFeeConfig: false,
     emergencyPause: snapshot.registry?.emergencyPause ?? false,
@@ -84,30 +83,16 @@ export function diffAuthority(
     : ('init_platform_fee_config' as const)
 
   // ── Platform fee config ──────────────────────────────────────────────────
-  // The three fields below share one instruction; they are listed separately so
-  // the review dialog reads like a changelog rather than "fee config changed".
-  if (draft.defaultFeeBps !== snapshot.feeConfig.defaultFeeBps) {
+  // The fee and the recipients share one instruction; they are listed separately
+  // so the review dialog reads like a changelog rather than "fee config changed".
+  const draftFeeLamports = solToLamports(draft.feeSol)
+  if (draftFeeLamports != null && draftFeeLamports.toString() !== snapshot.feeConfig.feeLamports) {
     changes.push({
-      key: 'defaultFeeBps',
+      key: 'feeSol',
       group: 'fees',
-      label: 'Paid-mint platform fee',
-      before: bpsToPercent(snapshot.feeConfig.defaultFeeBps),
-      after: bpsToPercent(draft.defaultFeeBps),
-      instruction: feeIx,
-    })
-  }
-
-  const draftFreeMintLamports = solToLamports(draft.freeMintFeeSol)
-  if (
-    draftFreeMintLamports != null &&
-    draftFreeMintLamports.toString() !== snapshot.feeConfig.freeMintFeeLamports
-  ) {
-    changes.push({
-      key: 'freeMintFee',
-      group: 'fees',
-      label: 'Free-mint flat fee',
-      before: formatSolAmount(snapshot.feeConfig.freeMintFeeLamports),
-      after: formatSolAmount(draftFreeMintLamports.toString()),
+      label: 'Platform fee per NFT (new collections)',
+      before: formatSolAmount(snapshot.feeConfig.feeLamports),
+      after: formatSolAmount(draftFeeLamports.toString()),
       instruction: feeIx,
     })
   }
@@ -137,7 +122,7 @@ export function diffAuthority(
       group: 'fees',
       label: 'Platform fee config PDA',
       before: 'not created',
-      after: `created (${bpsToPercent(draft.defaultFeeBps)}, ${describeRecipients(draft.recipients)})`,
+      after: `created (${draft.feeSol} SOL per NFT, ${describeRecipients(draft.recipients)})`,
       instruction: 'init_platform_fee_config',
     })
   }
@@ -160,13 +145,14 @@ export function diffAuthority(
     const override = draft.collections[c.pda]
     if (!override) continue
 
-    if (override.platformFeeBps !== c.platformFeeBps) {
+    const overrideLamports = solToLamports(override.platformFeeSol)
+    if (overrideLamports != null && overrideLamports.toString() !== c.platformFeeLamports) {
       changes.push({
         key: `collection:${c.pda}:fee`,
         group: 'collections',
-        label: `${collectionLabel(c)} — platform fee`,
-        before: bpsToPercent(c.platformFeeBps),
-        after: bpsToPercent(override.platformFeeBps),
+        label: `${collectionLabel(c)} — platform fee per NFT`,
+        before: formatSolAmount(c.platformFeeLamports),
+        after: formatSolAmount(overrideLamports.toString()),
         instruction: 'update_platform_fee',
         collectionPda: c.pda,
       })
@@ -257,28 +243,27 @@ export function validateAuthority(
 
   // ── Fee config ───────────────────────────────────────────────────────────
   if (feeConfigTouched) {
-    if (!Number.isInteger(draft.defaultFeeBps) || draft.defaultFeeBps < 0) {
+    const feeLamports = solToLamports(draft.feeSol)
+    if (feeLamports == null) {
       issues.push({
         level: 'error',
         group: 'fees',
-        key: 'defaultFeeBps',
-        message: 'Paid-mint fee must be a whole number of basis points.',
+        key: 'feeSol',
+        message: 'Platform fee must be a SOL amount with at most 9 decimals.',
       })
-    } else if (draft.defaultFeeBps > MAX_PLATFORM_FEE_BPS) {
+    } else if (feeLamports > BigInt(MAX_PLATFORM_FEE_LAMPORTS)) {
       issues.push({
         level: 'error',
         group: 'fees',
-        key: 'defaultFeeBps',
-        message: `The program caps the platform fee at ${bpsToPercent(MAX_PLATFORM_FEE_BPS)} (${MAX_PLATFORM_FEE_BPS} bps).`,
+        key: 'feeSol',
+        message: `The program caps the platform fee at ${formatSolAmount(MAX_PLATFORM_FEE_LAMPORTS)} per NFT.`,
       })
-    }
-
-    if (solToLamports(draft.freeMintFeeSol) == null) {
+    } else if (feeLamports.toString() !== snapshot.feeConfig.feeLamports && snapshot.collections.length > 0) {
       issues.push({
-        level: 'error',
+        level: 'warning',
         group: 'fees',
-        key: 'freeMintFee',
-        message: 'Free-mint fee must be a SOL amount with at most 9 decimals.',
+        key: 'feeSol',
+        message: `This sets the fee for collections created from now on. The ${snapshot.collections.length} existing collection${snapshot.collections.length === 1 ? '' : 's'} keep their current fee — reprice them individually in the Collections section if that is intended.`,
       })
     }
 
@@ -353,18 +338,17 @@ export function validateAuthority(
   // ── Per-collection fee overrides ─────────────────────────────────────────
   for (const c of snapshot.collections) {
     const override = draft.collections[c.pda]
-    if (!override || override.platformFeeBps === c.platformFeeBps) continue
-    if (
-      !Number.isInteger(override.platformFeeBps) ||
-      override.platformFeeBps < 0 ||
-      override.platformFeeBps > MAX_PLATFORM_FEE_BPS
-    ) {
+    if (!override) continue
+    const overrideLamports = solToLamports(override.platformFeeSol)
+    if (overrideLamports != null && overrideLamports.toString() === c.platformFeeLamports) continue
+    if (overrideLamports == null || overrideLamports > BigInt(MAX_PLATFORM_FEE_LAMPORTS)) {
       issues.push({
         level: 'error',
         group: 'collections',
         key: `collection:${c.pda}:fee`,
-        message: `${collectionLabel(c)}: fee must be between 0 and ${MAX_PLATFORM_FEE_BPS} bps.`,
+        message: `${collectionLabel(c)}: fee must be a SOL amount between 0 and ${formatSolAmount(MAX_PLATFORM_FEE_LAMPORTS)} (at most 9 decimals).`,
       })
+      continue
     }
     if (c.minted > 0) {
       issues.push({

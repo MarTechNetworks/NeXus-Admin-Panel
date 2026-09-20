@@ -191,18 +191,15 @@ export function useAuthorityConsole() {
         patchCollection(
           pda,
           field === 'fee'
-            ? { platformFeeBps: original.platformFeeBps }
+            ? { platformFeeSol: original.platformFeeSol }
             : { featured: original.featured },
         )
         return
       }
 
       switch (key) {
-        case 'defaultFeeBps':
-          patchDraft({ defaultFeeBps: fresh.defaultFeeBps })
-          break
-        case 'freeMintFee':
-          patchDraft({ freeMintFeeSol: fresh.freeMintFeeSol })
+        case 'feeSol':
+          patchDraft({ feeSol: fresh.feeSol })
           break
         case 'recipients':
           patchDraft({ recipients: fresh.recipients })

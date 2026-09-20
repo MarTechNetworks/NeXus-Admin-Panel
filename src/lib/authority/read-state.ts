@@ -75,8 +75,7 @@ export async function loadAuthoritySnapshot(
   const feeConfig: PlatformFeeConfigSnapshot = feeRaw
     ? {
         exists: true,
-        defaultFeeBps: feeRaw.defaultFeeBps,
-        freeMintFeeLamports: feeRaw.freeMintFeeLamports.toString(),
+        feeLamports: feeRaw.feeLamports.toString(),
         recipients: feeRaw.recipients.slice(0, feeRaw.num).map((address, i) => ({
           address: address.toBase58(),
           shareBps: feeRaw.sharesBps[i] ?? 0,
@@ -86,8 +85,7 @@ export async function loadAuthoritySnapshot(
         // No PDA yet: seed the form from what the backend serves so the first
         // write reproduces current behaviour instead of resetting it.
         exists: false,
-        defaultFeeBps: cfg.platformFeeBps,
-        freeMintFeeLamports: String(cfg.freeMintPlatformFeeLamports ?? 0),
+        feeLamports: String(cfg.platformFeeLamports ?? 0),
         recipients:
           cfg.platformFeeSplit?.map((r) => ({ address: r.address, shareBps: r.shareBps })) ??
           (cfg.platformWallet ? [{ address: cfg.platformWallet, shareBps: 10_000 }] : []),
@@ -104,7 +102,7 @@ export async function loadAuthoritySnapshot(
     registry,
     feeConfig,
     collections,
-    backendFeeBps: cfg.platformFeeBps,
+    backendFeeLamports: cfg.platformFeeLamports,
     backendPlatformWallet: cfg.platformWallet,
     network: cfg.network,
     fetchedAt: Date.now(),
@@ -131,7 +129,7 @@ async function loadCollections(
       pda: keys[i].toBase58(),
       mint,
       authority: row.authority.toBase58(),
-      platformFeeBps: row.platformFeeBps,
+      platformFeeLamports: row.platformFeeLamports.toString(),
       featured: row.featured,
       status: row.status,
       flags: row.flags,

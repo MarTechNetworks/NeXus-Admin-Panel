@@ -34,5 +34,4 @@ minimumReleaseAgeExclude:
   - '@dnd-kit/sortable@10.0.0'
   - '@dnd-kit/utilities@3.2.2'
 overrides:
-  postcss: 8.5.25
   'sharp@<0.35.0': 0.35.0

@@ -25,7 +25,7 @@ import {
   deriveRegistryPda,
   getProgram,
 } from '../solana/program'
-import { solToLamports } from './format'
+import { lamportsToSol, solToLamports } from './format'
 import type { AuthorityChange, AuthorityDraft, AuthorityIxKind, AuthoritySnapshot } from './types'
 
 /** Solana's hard packet limit for a serialized transaction. */
@@ -97,7 +97,9 @@ export async function buildAuthorityPlan(params: BuildPlanParams): Promise<Autho
   if (has('init_platform_fee_config') || has('update_platform_fee_config')) {
     const recipients = draft.recipients.map((r) => new PublicKey(r.address.trim()))
     const sharesBps = draft.recipients.map((r) => r.shareBps)
-    const freeMintLamports = solToLamports(draft.freeMintFeeSol) ?? BigInt(0)
+    // validateAuthority has already rejected an unparseable amount; the fallback
+    // only keeps the type narrow.
+    const feeLamports = solToLamports(draft.feeSol) ?? BigInt(0)
     // The program re-checks rent exemption against these accounts, in this order.
     const remaining: AccountMeta[] = recipients.map((pubkey) => ({
       pubkey,
@@ -105,12 +107,7 @@ export async function buildAuthorityPlan(params: BuildPlanParams): Promise<Autho
       isWritable: false,
     }))
 
-    const args = [
-      recipients,
-      sharesBps,
-      new BN(freeMintLamports.toString()),
-      draft.defaultFeeBps,
-    ] as const
+    const args = [recipients, sharesBps, new BN(feeLamports.toString())] as const
 
     const instruction = snapshot.feeConfig.exists
       ? await program.methods
@@ -132,7 +129,7 @@ export async function buildAuthorityPlan(params: BuildPlanParams): Promise<Autho
     steps.push({
       kind: snapshot.feeConfig.exists ? 'update_platform_fee_config' : 'init_platform_fee_config',
       label: snapshot.feeConfig.exists ? 'Retune platform fee' : 'Create platform fee config',
-      detail: `${(draft.defaultFeeBps / 100).toFixed(2)}% paid-mint fee, split across ${recipients.length} wallet${recipients.length === 1 ? '' : 's'}.`,
+      detail: `${lamportsToSol(feeLamports)} SOL per NFT on every mint, split across ${recipients.length} wallet${recipients.length === 1 ? '' : 's'}.`,
       changeKeys: [
         ...keysFor('init_platform_fee_config'),
         ...keysFor('update_platform_fee_config'),
@@ -151,7 +148,7 @@ export async function buildAuthorityPlan(params: BuildPlanParams): Promise<Autho
       detail: `${change.before} → ${change.after}`,
       changeKeys: [change.key],
       instruction: await program.methods
-        .updatePlatformFee(override.platformFeeBps)
+        .updatePlatformFee(new BN((solToLamports(override.platformFeeSol) ?? BigInt(0)).toString()))
         .accountsPartial({ collection: new PublicKey(pda), registry, authority })
         .instruction(),
     })

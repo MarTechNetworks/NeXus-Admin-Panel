@@ -9,6 +9,12 @@ export const endpoints = {
     // Backend/src/auth/auth.controller.ts
     login: '/api/admin/auth/login',
     me: '/api/admin/auth/me',
+    /** Self-service account security — any signed-in admin, or a link from a mail. */
+    changePassword: '/api/admin/auth/password/change',
+    forgotPassword: '/api/admin/auth/password/forgot',
+    resetPassword: '/api/admin/auth/password/reset',
+    changeEmail: '/api/admin/auth/email/change',
+    verifyEmail: '/api/admin/auth/email/verify',
     /** Admin console accounts. super_admin only. */
     users: '/api/admin/auth/users',
     userById: (id: string) => `/api/admin/auth/users/${id}`,

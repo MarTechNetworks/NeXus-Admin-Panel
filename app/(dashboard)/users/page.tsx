@@ -468,7 +468,7 @@ export default function UsersPage() {
       {/* ── Password reset ─────────────────────────────────────────────────── */}
       <Modal open={!!pwTarget} onClose={() => setPwTarget(null)} title={`Set password for ${pwTarget?.displayName ?? ''}`} size="md">
         <div className="space-y-4">
-          <Field label="New password" hint={`At least ${MIN_PASSWORD} characters. Existing sessions stay valid until their JWT expires.`}>
+          <Field label="New password" hint={`At least ${MIN_PASSWORD} characters. Their existing sessions are signed out and they get an email saying who did it.`}>
             <input
               type="text"
               autoComplete="new-password"

@@ -16,9 +16,9 @@ import { useMemo, useState } from 'react'
 import { LayoutGrid, Search, Star, X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { gradientFor, resolveUrl } from '@/components/featured/ui'
-import { BpsInput, Callout, Section } from '../primitives'
-import { bpsToPercent, shortAddress } from '@/lib/authority/format'
-import { COLLECTION_STATUS_LABELS, MAX_PLATFORM_FEE_BPS } from '@/lib/solana/program'
+import { Callout, Section, TextInput } from '../primitives'
+import { formatSolAmount, lamportsToSol, shortAddress, solToLamports } from '@/lib/authority/format'
+import { COLLECTION_STATUS_LABELS, MAX_PLATFORM_FEE_LAMPORTS } from '@/lib/solana/program'
 import type { AuthorityConsoleState } from '@/lib/authority/useAuthorityConsole'
 
 const PAGE_SIZE = 25
@@ -28,7 +28,11 @@ export function CollectionsSection({ state }: { state: AuthorityConsoleState }) 
   const [query, setQuery] = useState('')
   const [onlyChanged, setOnlyChanged] = useState(false)
   const [visible, setVisible] = useState(PAGE_SIZE)
-  const [bulkFeeBps, setBulkFeeBps] = useState(100)
+  // Seeded from the global config so "apply the platform default to everything
+  // shown" is one click, which is the common reason to bulk-edit at all.
+  const [bulkFeeSol, setBulkFeeSol] = useState(() =>
+    snapshot ? lamportsToSol(snapshot.feeConfig.feeLamports) : '0.01',
+  )
 
   const changedKeys = useMemo(
     () => new Set(changes.filter((c) => c.collectionPda).map((c) => c.key)),
@@ -58,15 +62,20 @@ export function CollectionsSection({ state }: { state: AuthorityConsoleState }) 
   const disabled = !isAuthority
   const groupIssues = issues.filter((i) => i.group === 'collections' && i.level === 'warning' && !i.key)
 
+  const bulkFeeValid = (() => {
+    const l = solToLamports(bulkFeeSol)
+    return l != null && l <= BigInt(MAX_PLATFORM_FEE_LAMPORTS)
+  })()
   const applyBulkFee = () => {
-    rows.forEach((c) => patchCollection(c.pda, { platformFeeBps: bulkFeeBps }))
+    if (!bulkFeeValid) return
+    rows.forEach((c) => patchCollection(c.pda, { platformFeeSol: bulkFeeSol }))
   }
 
   return (
     <Section
       id="collections"
       title="Per-collection overrides"
-      description="Collection.platform_fee_bps and Collection.featured are registry-authority fields — the creator cannot change either. Everything else on a collection belongs to its own authority."
+      description="Collection.platform_fee_lamports and Collection.featured are registry-authority fields — the creator cannot change either. The fee is frozen at creation, so changing the global default above does not touch these rows; this is where a live collection gets repriced. Everything else on a collection belongs to its own authority."
       icon={<LayoutGrid className="h-4 w-4" />}
       changedCount={changedCount}
       aside={
@@ -125,8 +134,16 @@ export function CollectionsSection({ state }: { state: AuthorityConsoleState }) 
               <span className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
                 Set fee for all {rows.length} shown
               </span>
-              <BpsInput value={bulkFeeBps} onChange={setBulkFeeBps} max={MAX_PLATFORM_FEE_BPS} />
-              <Button variant="secondary" size="sm" onClick={applyBulkFee}>
+              <div className="flex w-36 items-center gap-2">
+                <TextInput
+                  value={bulkFeeSol}
+                  onChange={setBulkFeeSol}
+                  placeholder="0.01"
+                  invalid={!bulkFeeValid}
+                />
+                <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>SOL</span>
+              </div>
+              <Button variant="secondary" size="sm" onClick={applyBulkFee} disabled={!bulkFeeValid}>
                 Apply
               </Button>
             </div>
@@ -216,23 +233,17 @@ export function CollectionsSection({ state }: { state: AuthorityConsoleState }) 
 
                       <td className="px-3 py-2.5">
                         <div className="flex items-center gap-2">
-                          <input
-                            type="number"
-                            className="input-base w-20 text-xs"
-                            style={feeChanged ? { borderColor: 'var(--accent)' } : undefined}
-                            value={override.platformFeeBps / 100}
-                            min={0}
-                            max={MAX_PLATFORM_FEE_BPS / 100}
-                            step={0.01}
-                            disabled={disabled}
-                            onChange={(e) => {
-                              const pct = Number(e.target.value)
-                              if (!Number.isFinite(pct)) return
-                              patchCollection(c.pda, { platformFeeBps: Math.round(pct * 100) })
-                            }}
-                          />
+                          <div className="w-24">
+                            <TextInput
+                              value={override.platformFeeSol}
+                              onChange={(value) => patchCollection(c.pda, { platformFeeSol: value })}
+                              placeholder="0.01"
+                              invalid={solToLamports(override.platformFeeSol) == null}
+                              disabled={disabled}
+                            />
+                          </div>
                           <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
-                            {feeChanged ? `was ${bpsToPercent(c.platformFeeBps)}` : '%'}
+                            {feeChanged ? `was ${formatSolAmount(c.platformFeeLamports)}` : 'SOL / NFT'}
                           </span>
                         </div>
                       </td>

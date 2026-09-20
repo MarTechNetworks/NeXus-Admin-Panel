@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { Menu, Transition } from '@headlessui/react'
 import { Fragment } from 'react'
@@ -25,6 +26,7 @@ const pageTitles: Record<string, string> = {
   '/users': 'Users',
   '/settings': 'Settings',
   '/logs': 'Audit Log',
+  '/account': 'Account',
 }
 
 export function Header({
@@ -149,26 +151,26 @@ export function Header({
               )}
               <Menu.Item>
                 {({ active }) => (
-                  <a
-                    href="#profile"
+                  <Link
+                    href="/account"
                     className={cn('flex items-center gap-2 px-4 py-2 text-sm transition-colors duration-100')}
                     style={{ color: active ? 'var(--text-primary)' : 'var(--text-secondary)', background: active ? 'var(--bg-hover)' : 'transparent' }}
                   >
                     <UserIcon className="h-4 w-4" />
-                    Profile
-                  </a>
+                    Account &amp; security
+                  </Link>
                 )}
               </Menu.Item>
               <Menu.Item>
                 {({ active }) => (
-                  <a
-                    href="#settings"
+                  <Link
+                    href="/settings"
                     className={cn('flex items-center gap-2 px-4 py-2 text-sm transition-colors duration-100')}
                     style={{ color: active ? 'var(--text-primary)' : 'var(--text-secondary)', background: active ? 'var(--bg-hover)' : 'transparent' }}
                   >
                     <SettingsIcon className="h-4 w-4" />
-                    Settings
-                  </a>
+                    Platform
+                  </Link>
                 )}
               </Menu.Item>
               <div style={{ height: '1px', background: 'var(--border-primary)', margin: '4px 0' }} />

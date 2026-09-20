@@ -4,11 +4,13 @@
  * PlatformFeeSection — the PlatformFeeConfig PDA: what the platform takes and
  * who it goes to.
  *
- * Two numbers and up to four wallets, but it is the highest-consequence card on
- * the page: it prices every mint on the platform from the next block onward. So
- * the section shows the live value beside every input, totals the shares as you
- * type, and flags a recipient that is not rent exempt — the one mistake here
- * that fails the transaction after signing rather than before.
+ * One number and up to four wallets, but it is the highest-consequence card on
+ * the page. The recipient split prices every mint on the platform from the next
+ * block onward; the fee amount is stamped on every collection created from now
+ * on (existing ones keep theirs — see the Collections card). So the section shows
+ * the live value beside every input, totals the shares as you type, and flags a
+ * recipient that is not rent exempt — the one mistake here that fails the
+ * transaction after signing rather than before.
  */
 import { Coins, Plus, Trash2, Wallet } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
@@ -20,7 +22,7 @@ import {
   lamportsToSol,
   shortAddress,
 } from '@/lib/authority/format'
-import { MAX_PLATFORM_FEE_BPS, MAX_PLATFORM_FEE_RECIPIENTS } from '@/lib/solana/program'
+import { MAX_PLATFORM_FEE_LAMPORTS, MAX_PLATFORM_FEE_RECIPIENTS } from '@/lib/solana/program'
 import type { AuthorityConsoleState } from '@/lib/authority/useAuthorityConsole'
 
 export function PlatformFeeSection({ state }: { state: AuthorityConsoleState }) {
@@ -31,6 +33,8 @@ export function PlatformFeeSection({ state }: { state: AuthorityConsoleState }) 
   const changed = (key: string) => changes.some((c) => c.key === key)
   const errorFor = (key: string) =>
     issues.find((i) => i.level === 'error' && i.key === key)?.message
+  const warningFor = (key: string) =>
+    issues.find((i) => i.level === 'warning' && i.key === key)?.message
   const groupErrors = issues.filter(
     (i) => i.level === 'error' && (i.group === 'fees' || i.group === 'recipients') && !i.key,
   )
@@ -72,7 +76,7 @@ export function PlatformFeeSection({ state }: { state: AuthorityConsoleState }) 
     <Section
       id="fees"
       title="Platform fee"
-      description="The global PlatformFeeConfig PDA. Applies to every collection that does not carry its own override, from the next mint onward — it never touches mints that already happened."
+      description="The global PlatformFeeConfig PDA. A flat amount per NFT on every mint, free or paid, on top of the creator's price. The amount is copied into each collection when it is created; the recipient split is read live on every mint."
       icon={<Coins className="h-4 w-4" />}
       changedCount={changedCount}
     >
@@ -97,51 +101,27 @@ export function PlatformFeeSection({ state }: { state: AuthorityConsoleState }) 
 
       <div className="grid gap-3 lg:grid-cols-2">
         <Field
-          label="Paid-mint fee"
-          htmlFor="defaultFeeBps"
-          changed={changed('defaultFeeBps')}
-          onRevert={() => revertChange('defaultFeeBps')}
-          error={errorFor('defaultFeeBps')}
+          label="Fee per NFT"
+          htmlFor="feeSol"
+          changed={changed('feeSol')}
+          onRevert={() => revertChange('feeSol')}
+          error={errorFor('feeSol')}
           hint={
             <>
-              Charged on top of the creator&apos;s price (additive model), so the creator always
-              receives their full ask. On chain now:{' '}
-              <span className="font-mono">{bpsToPercent(snapshot.feeConfig.defaultFeeBps)}</span>.
-              Program cap {bpsToPercent(MAX_PLATFORM_FEE_BPS)}.
-            </>
-          }
-        >
-          <BpsInput
-            id="defaultFeeBps"
-            value={draft.defaultFeeBps}
-            onChange={(bps) => patchDraft({ defaultFeeBps: bps })}
-            max={MAX_PLATFORM_FEE_BPS}
-            invalid={!!errorFor('defaultFeeBps')}
-            disabled={disabled}
-          />
-        </Field>
-
-        <Field
-          label="Free-mint flat fee"
-          htmlFor="freeMintFee"
-          changed={changed('freeMintFee')}
-          onRevert={() => revertChange('freeMintFee')}
-          error={errorFor('freeMintFee')}
-          hint={
-            <>
-              A percentage of zero is zero, so zero-price collections pay this fixed amount per NFT
-              instead. On chain now:{' '}
-              <span className="font-mono">{formatSolAmount(snapshot.feeConfig.freeMintFeeLamports)}</span>.
+              Charged on top of the creator&apos;s price (additive model) on every mint, so the
+              creator always receives their full ask and a free mint still pays this. On chain now:{' '}
+              <span className="font-mono">{formatSolAmount(snapshot.feeConfig.feeLamports)}</span>.
+              Program cap {formatSolAmount(MAX_PLATFORM_FEE_LAMPORTS)}.
             </>
           }
         >
           <div className="flex items-center gap-2">
             <TextInput
-              id="freeMintFee"
-              value={draft.freeMintFeeSol}
-              onChange={(value) => patchDraft({ freeMintFeeSol: value })}
+              id="feeSol"
+              value={draft.feeSol}
+              onChange={(value) => patchDraft({ feeSol: value })}
               placeholder="0.01"
-              invalid={!!errorFor('freeMintFee')}
+              invalid={!!errorFor('feeSol')}
               disabled={disabled}
             />
             <span className="text-xs font-medium" style={{ color: 'var(--text-tertiary)' }}>
@@ -149,6 +129,18 @@ export function PlatformFeeSection({ state }: { state: AuthorityConsoleState }) 
             </span>
           </div>
         </Field>
+
+        <div className="flex items-end">
+          {warningFor('feeSol') ? (
+            <Callout level="warning">{warningFor('feeSol')}</Callout>
+          ) : (
+            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+              Backend default: {lamportsToSol(snapshot.backendFeeLamports)} SOL. The backend passes
+              this as the fallback argument to <span className="font-mono">create_collection</span>;
+              once this PDA exists the program ignores the argument and uses the value here.
+            </p>
+          )}
+        </div>
       </div>
 
       {/* ── Recipients ─────────────────────────────────────────────────── */}
