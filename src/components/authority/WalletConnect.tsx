@@ -67,7 +67,7 @@ export function WalletButton() {
         isLoading={connecting}
         onClick={() => setOpen(true)}
       >
-        Connect authority wallet
+        Connect owner wallet
       </Button>
 
       <Modal open={open} onClose={() => setOpen(false)} title="Connect a wallet">

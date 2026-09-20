@@ -3,10 +3,13 @@
 /**
  * ReviewDialog — the last screen before a signature.
  *
- * It shows three things the wallet popup cannot: the before/after of every field,
- * the instruction list in execution order, and how full the 1232-byte packet is.
- * After signing it stays open and becomes the receipt, because a signature with
- * no visible outcome is how operators end up re-running a batch they already sent.
+ * The owner sees one thing: a before → after list of what they changed, in the
+ * same words the page used. The instruction list and the packet meter — what an
+ * engineer wants when something goes wrong — sit behind a "Technical details"
+ * fold so they are there without being the first thing on screen. After
+ * signing the dialog stays open and becomes the receipt, because a signature
+ * with no visible outcome is how people end up re-sending a save they already
+ * made.
  */
 import { Fragment } from 'react'
 import { Dialog, Transition } from '@headlessui/react'
@@ -28,13 +31,13 @@ import type { SubmitState } from '@/lib/authority/useAuthorityConsole'
 
 const PHASE_COPY: Record<SubmitState['phase'], string> = {
   idle: '',
-  building: 'Building the transaction…',
-  simulating: 'Simulating against the cluster…',
-  'awaiting-signature': 'Waiting for your wallet…',
-  sending: 'Broadcasting…',
-  confirming: 'Waiting for confirmation…',
-  success: 'Applied on chain.',
-  error: 'Not applied.',
+  building: 'Preparing…',
+  simulating: 'Checking the transaction…',
+  'awaiting-signature': 'Approve it in your wallet…',
+  sending: 'Sending…',
+  confirming: 'Waiting for the network to confirm…',
+  success: 'Saved.',
+  error: 'Not saved.',
 }
 
 export function ReviewDialog({
@@ -91,7 +94,7 @@ export function ReviewDialog({
               leaveTo="opacity-0 scale-95"
             >
               <Dialog.Panel
-                className="card w-full max-w-3xl overflow-hidden"
+                className="card w-full max-w-xl overflow-hidden"
                 style={{ background: 'rgba(12, 14, 20, 0.98)' }}
               >
                 {/* Header */}
@@ -101,17 +104,15 @@ export function ReviewDialog({
                 >
                   <div>
                     <Dialog.Title className="text-base font-semibold" style={{ color: 'var(--text-primary)' }}>
-                      {done ? 'Changes applied' : 'Review before signing'}
+                      {done ? 'Saved' : 'Save these changes?'}
                     </Dialog.Title>
                     <p className="mt-0.5 text-xs" style={{ color: 'var(--text-tertiary)' }}>
                       {done
                         ? `${pluralize(changes.length, 'change')} written to chain.`
                         : plan
-                          ? `${pluralize(changes.length, 'change')} · ${pluralize(plan.steps.length, 'instruction')} · ${
-                              plan.singleTransaction
-                                ? 'one signature'
-                                : `${plan.batches.length} signatures`
-                            }`
+                          ? plan.singleTransaction
+                            ? 'One approval in your wallet.'
+                            : `${plan.batches.length} approvals in your wallet, one after the other.`
                           : 'Preparing…'}
                     </p>
                   </div>
@@ -135,9 +136,8 @@ export function ReviewDialog({
                   )}
 
                   {/* Diff */}
-                  <h3 className="eyebrow mb-2">What changes</h3>
                   <ul
-                    className="mb-5 divide-y overflow-hidden rounded-lg"
+                    className="divide-y overflow-hidden rounded-lg"
                     style={{ borderColor: 'var(--border-primary)', border: '1px solid var(--border-primary)' }}
                   >
                     {changes.map((change) => (
@@ -147,14 +147,14 @@ export function ReviewDialog({
                         </p>
                         <p className="mt-1 flex flex-wrap items-center gap-2 text-[11px]">
                           <span
-                            className="rounded px-1.5 py-0.5 font-mono"
+                            className="rounded px-1.5 py-0.5"
                             style={{ background: 'var(--bg-tertiary)', color: 'var(--text-tertiary)' }}
                           >
                             {change.before}
                           </span>
                           <ArrowRight className="h-3 w-3" style={{ color: 'var(--text-muted)' }} />
                           <span
-                            className="rounded px-1.5 py-0.5 font-mono"
+                            className="rounded px-1.5 py-0.5 font-medium"
                             style={{ background: 'var(--accent-soft)', color: 'var(--accent)' }}
                           >
                             {change.after}
@@ -164,11 +164,25 @@ export function ReviewDialog({
                     ))}
                   </ul>
 
-                  {/* Instruction order */}
+                  {plan && !plan.singleTransaction && (
+                    <div className="mt-3">
+                      <Callout level="warning">
+                        Too many changes to fit in one transaction — your wallet will ask{' '}
+                        {plan.batches.length} times, in order. Save fewer changes at once to keep it to one.
+                      </Callout>
+                    </div>
+                  )}
+
+                  {/* Engineer's view, folded */}
                   {plan && plan.steps.length > 0 && (
-                    <>
-                      <h3 className="eyebrow mb-2">Instructions, in execution order</h3>
-                      <ol className="mb-5 space-y-1.5">
+                    <details className="mt-4">
+                      <summary
+                        className="cursor-pointer select-none text-[11px] font-medium"
+                        style={{ color: 'var(--text-muted)' }}
+                      >
+                        Technical details
+                      </summary>
+                      <ol className="mt-2 space-y-1.5">
                         {plan.steps.map((step, i) => (
                           <li
                             key={`${step.kind}-${i}`}
@@ -191,39 +205,10 @@ export function ReviewDialog({
                           </li>
                         ))}
                       </ol>
-
-                      {/* Packet meter */}
-                      <div className="panel-subtle px-3 py-2.5">
-                        <div className="flex items-center justify-between text-[11px]">
-                          <span style={{ color: 'var(--text-tertiary)' }}>
-                            Transaction size {largest} / {MAX_TX_BYTES} bytes
-                          </span>
-                          <span style={{ color: fillPct > 90 ? 'var(--accent-warning)' : 'var(--text-muted)' }}>
-                            {fillPct}% full
-                          </span>
-                        </div>
-                        <div
-                          className="mt-2 h-1.5 overflow-hidden rounded-full"
-                          style={{ background: 'var(--bg-tertiary)' }}
-                        >
-                          <div
-                            className="h-full rounded-full transition-all"
-                            style={{
-                              width: `${fillPct}%`,
-                              background:
-                                fillPct > 90 ? 'var(--accent-warning)' : 'var(--accent)',
-                            }}
-                          />
-                        </div>
-                        {!plan.singleTransaction && (
-                          <p className="mt-2 text-[11px]" style={{ color: 'var(--accent-warning)' }}>
-                            Too many changes for one packet — they are split into{' '}
-                            {plan.batches.length} transactions, signed in order. Stage fewer changes
-                            to keep it to a single signature.
-                          </p>
-                        )}
-                      </div>
-                    </>
+                      <p className="mt-2 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                        Transaction size {largest} / {MAX_TX_BYTES} bytes ({fillPct}%).
+                      </p>
+                    </details>
                   )}
 
                   {/* Progress / result */}
@@ -279,7 +264,7 @@ export function ReviewDialog({
                             className="inline-flex items-center gap-1 text-[11px]"
                             style={{ color: 'var(--accent)' }}
                           >
-                            Explorer
+                            View on explorer
                             <ExternalLink className="h-3 w-3" />
                           </a>
                         </div>
@@ -312,8 +297,8 @@ export function ReviewDialog({
                 >
                   <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
                     {done
-                      ? 'Chain state has been re-read.'
-                      : 'Simulated against the cluster before your wallet is asked to sign.'}
+                      ? 'The page now shows the saved values.'
+                      : 'Checked against the network before your wallet asks you to approve.'}
                   </p>
                   <div className="flex items-center gap-2">
                     {done ? (
@@ -332,7 +317,7 @@ export function ReviewDialog({
                           disabled={busy || !plan || plan.steps.length === 0}
                           onClick={onSign}
                         >
-                          {submit.phase === 'error' ? 'Try again' : 'Sign & send'}
+                          {submit.phase === 'error' ? 'Try again' : 'Approve in wallet'}
                         </Button>
                       </>
                     )}

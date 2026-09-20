@@ -1,28 +1,27 @@
 'use client'
 
 /**
- * PlatformFeeSection — the PlatformFeeConfig PDA: what the platform takes and
- * who it goes to.
+ * PlatformFeeSection — what the platform takes on every mint, and who gets it.
  *
  * One number and up to four wallets, but it is the highest-consequence card on
- * the page. The recipient split prices every mint on the platform from the next
- * block onward; the fee amount is stamped on every collection created from now
- * on (existing ones keep theirs — see the Collections card). So the section shows
- * the live value beside every input, totals the shares as you type, and flags a
- * recipient that is not rent exempt — the one mistake here that fails the
- * transaction after signing rather than before.
+ * the page: the recipient split prices every mint on the platform from the next
+ * block onward, and the amount is stamped on every collection created from now
+ * on (existing ones keep theirs — see Advanced). So the card stays quiet until
+ * something is wrong: the only per-row annotations are a bad address or a
+ * wallet too empty to receive, which is the one mistake that fails after
+ * signing rather than before.
+ *
+ * Whether the on-chain fee account exists yet is an implementation detail the
+ * owner should not have to know about: the diff already emits the create
+ * instruction instead of the update one when it is missing, so a first edit
+ * publishes it. The "publish as-is" link covers the one case a diff cannot —
+ * wanting today's defaults on chain without changing them.
  */
-import { Coins, Plus, Trash2, Wallet } from 'lucide-react'
+import { Coins, Plus, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
-import { BpsInput, Callout, Field, Section, TextInput } from '../primitives'
-import {
-  bpsToPercent,
-  formatSolAmount,
-  isValidAddress,
-  lamportsToSol,
-  shortAddress,
-} from '@/lib/authority/format'
-import { MAX_PLATFORM_FEE_LAMPORTS, MAX_PLATFORM_FEE_RECIPIENTS } from '@/lib/solana/program'
+import { Callout, Field, PercentInput, Section, TextInput } from '../primitives'
+import { bpsToPercent, isValidAddress, lamportsToSol } from '@/lib/authority/format'
+import { MAX_PLATFORM_FEE_RECIPIENTS } from '@/lib/solana/program'
 import type { AuthorityConsoleState } from '@/lib/authority/useAuthorityConsole'
 
 export function PlatformFeeSection({ state }: { state: AuthorityConsoleState }) {
@@ -76,102 +75,76 @@ export function PlatformFeeSection({ state }: { state: AuthorityConsoleState }) 
     <Section
       id="fees"
       title="Platform fee"
-      description="The global PlatformFeeConfig PDA. A flat amount per NFT on every mint, free or paid, on top of the creator's price. The amount is copied into each collection when it is created; the recipient split is read live on every mint."
+      description="Charged to the buyer on every mint, on top of the creator's price. Free mints pay it too; the creator always gets their full price."
       icon={<Coins className="h-4 w-4" />}
       changedCount={changedCount}
     >
-      {!snapshot.feeConfig.exists && (
-        <div className="mb-4 space-y-2">
-          <Callout level="warning">
-            No fee-config PDA exists yet on this cluster, so mints fall back to the single platform
-            wallet. The values below are seeded from the backend&apos;s current defaults — creating
-            the account (<span className="font-mono">init_platform_fee_config</span>, rent paid by
-            the authority) reproduces today&apos;s behaviour on chain rather than changing it.
-          </Callout>
-          <Button
-            variant={draft.createFeeConfig ? 'primary' : 'secondary'}
-            size="sm"
+      {/* ── Amount ─────────────────────────────────────────────────────── */}
+      <Field
+        label="Fee per NFT"
+        htmlFor="feeSol"
+        changed={changed('feeSol')}
+        onRevert={() => revertChange('feeSol')}
+        error={errorFor('feeSol')}
+      >
+        <div className="flex items-center gap-2">
+          <TextInput
+            id="feeSol"
+            value={draft.feeSol}
+            onChange={(value) => patchDraft({ feeSol: value })}
+            placeholder="0.01"
+            invalid={!!errorFor('feeSol')}
             disabled={disabled}
-            onClick={() => patchDraft({ createFeeConfig: !draft.createFeeConfig })}
-          >
-            {draft.createFeeConfig ? 'Staged for creation — click to unstage' : 'Stage PDA creation'}
-          </Button>
+            className="w-36 text-lg font-semibold"
+          />
+          <span className="text-sm font-medium" style={{ color: 'var(--text-tertiary)' }}>
+            SOL
+          </span>
+        </div>
+      </Field>
+
+      {warningFor('feeSol') && (
+        <div className="mt-2">
+          <Callout level="warning">{warningFor('feeSol')}</Callout>
         </div>
       )}
 
-      <div className="grid gap-3 lg:grid-cols-2">
-        <Field
-          label="Fee per NFT"
-          htmlFor="feeSol"
-          changed={changed('feeSol')}
-          onRevert={() => revertChange('feeSol')}
-          error={errorFor('feeSol')}
-          hint={
-            <>
-              Charged on top of the creator&apos;s price (additive model) on every mint, so the
-              creator always receives their full ask and a free mint still pays this. On chain now:{' '}
-              <span className="font-mono">{formatSolAmount(snapshot.feeConfig.feeLamports)}</span>.
-              Program cap {formatSolAmount(MAX_PLATFORM_FEE_LAMPORTS)}.
-            </>
-          }
-        >
-          <div className="flex items-center gap-2">
-            <TextInput
-              id="feeSol"
-              value={draft.feeSol}
-              onChange={(value) => patchDraft({ feeSol: value })}
-              placeholder="0.01"
-              invalid={!!errorFor('feeSol')}
-              disabled={disabled}
-            />
-            <span className="text-xs font-medium" style={{ color: 'var(--text-tertiary)' }}>
-              SOL
-            </span>
-          </div>
-        </Field>
-
-        <div className="flex items-end">
-          {warningFor('feeSol') ? (
-            <Callout level="warning">{warningFor('feeSol')}</Callout>
-          ) : (
-            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-              Backend default: {lamportsToSol(snapshot.backendFeeLamports)} SOL. The backend passes
-              this as the fallback argument to <span className="font-mono">create_collection</span>;
-              once this PDA exists the program ignores the argument and uses the value here.
-            </p>
-          )}
-        </div>
-      </div>
+      {!snapshot.feeConfig.exists && (
+        <p className="mt-2 px-1 text-[11px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+          Not published on chain yet — this is the default the platform uses today (
+          {lamportsToSol(snapshot.backendFeeLamports)} SOL). Your first save publishes it, or{' '}
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={() => patchDraft({ createFeeConfig: !draft.createFeeConfig })}
+            className="underline underline-offset-2 disabled:no-underline disabled:opacity-60"
+            style={{ color: draft.createFeeConfig ? 'var(--accent)' : 'var(--text-tertiary)' }}
+          >
+            {draft.createFeeConfig ? 'publishing as-is (undo)' : 'publish it as-is'}
+          </button>
+          .
+        </p>
+      )}
 
       {/* ── Recipients ─────────────────────────────────────────────────── */}
       <div className="mt-5">
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <Wallet className="h-3.5 w-3.5" style={{ color: 'var(--text-tertiary)' }} />
-            <h3 className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--text-tertiary)' }}>
-              Fee recipients
-            </h3>
-            <span
-              className="rounded px-1.5 py-0.5 font-mono text-[10px]"
-              style={{ background: 'var(--bg-tertiary)', color: 'var(--text-muted)' }}
-            >
-              {draft.recipients.length}/{MAX_PLATFORM_FEE_RECIPIENTS}
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button variant="ghost" size="sm" onClick={splitEvenly} disabled={disabled || draft.recipients.length === 0}>
-              Split evenly
-            </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              leftIcon={<Plus className="h-3.5 w-3.5" />}
-              onClick={addRecipient}
-              disabled={disabled || draft.recipients.length >= MAX_PLATFORM_FEE_RECIPIENTS}
-            >
-              Add
-            </Button>
-          </div>
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2 px-1">
+          <h3
+            className="text-[11px] font-bold uppercase tracking-wider"
+            style={{ color: changed('recipients') ? 'var(--accent)' : 'var(--text-tertiary)' }}
+          >
+            Goes to
+          </h3>
+          <span
+            className="text-xs font-semibold"
+            style={{ color: totalOk ? 'var(--accent-success)' : 'var(--accent-error)' }}
+          >
+            {draft.recipients.length === 0
+              ? 'No wallets'
+              : totalOk
+                ? 'Adds up to 100%'
+                : `Adds up to ${bpsToPercent(totalBps)} — must be 100%`}
+          </span>
         </div>
 
         <div
@@ -183,7 +156,7 @@ export function PlatformFeeSection({ state }: { state: AuthorityConsoleState }) 
         >
           {draft.recipients.length === 0 ? (
             <p className="px-3 py-6 text-center text-xs" style={{ color: 'var(--text-muted)' }}>
-              No recipients. The program rejects an empty list — add at least one wallet.
+              Add at least one wallet to receive the fee.
             </p>
           ) : (
             <ul className="divide-y" style={{ borderColor: 'var(--border-primary)' }}>
@@ -191,61 +164,46 @@ export function PlatformFeeSection({ state }: { state: AuthorityConsoleState }) 
                 const address = row.address.trim()
                 const valid = isValidAddress(address)
                 const rentRow = rentFor(address)
-                const onChainRow = snapshot.feeConfig.recipients[index]
+                const problem =
+                  address && !valid
+                    ? 'Not a valid Solana address'
+                    : rentRow && !rentRow.rentExempt
+                      ? `Nearly empty (${lamportsToSol(rentRow.lamports)} SOL) — send it at least 0.001 SOL first, or the save fails`
+                      : null
                 return (
-                  <li key={index} className="flex flex-wrap items-start gap-2 p-3">
+                  <li key={index} className="flex flex-wrap items-center gap-2 p-3">
                     <div className="min-w-0 flex-1">
                       <TextInput
                         mono
                         value={row.address}
                         onChange={(value) => setRecipient(index, { address: value })}
-                        placeholder="Recipient wallet address"
-                        invalid={!!address && !valid}
+                        placeholder="Wallet address"
+                        invalid={!!problem}
                         disabled={disabled}
                       />
-                      <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px]">
-                        {onChainRow ? (
-                          <span style={{ color: 'var(--text-muted)' }}>
-                            on chain: {shortAddress(onChainRow.address, 4, 4)} ·{' '}
-                            {bpsToPercent(onChainRow.shareBps)}
-                          </span>
-                        ) : (
-                          <span style={{ color: 'var(--accent)' }}>new recipient</span>
-                        )}
-                        {address && !valid && (
-                          <span style={{ color: 'var(--accent-error)' }}>invalid address</span>
-                        )}
-                        {rentRow && !rentRow.rentExempt && (
-                          <span style={{ color: 'var(--accent-error)' }}>
-                            not rent exempt ({lamportsToSol(rentRow.lamports)} SOL) — fund it first
-                          </span>
-                        )}
-                        {rentRow?.rentExempt && (
-                          <span style={{ color: 'var(--accent-success)' }}>
-                            funded ({lamportsToSol(rentRow.lamports)} SOL)
-                          </span>
-                        )}
-                      </div>
+                      {problem && (
+                        <p className="mt-1.5 text-[11px]" style={{ color: 'var(--accent-error)' }}>
+                          {problem}
+                        </p>
+                      )}
                     </div>
 
-                    <div className="w-32 shrink-0">
-                      <BpsInput
-                        value={row.shareBps}
-                        onChange={(bps) => setRecipient(index, { shareBps: bps })}
-                        max={10_000}
-                        disabled={disabled}
-                      />
-                    </div>
+                    <PercentInput
+                      value={row.shareBps}
+                      onChange={(bps) => setRecipient(index, { shareBps: bps })}
+                      disabled={disabled}
+                    />
 
                     <button
                       type="button"
                       onClick={() => removeRecipient(index)}
                       disabled={disabled}
-                      className="mt-1 rounded p-1.5 transition-colors disabled:opacity-40"
+                      className="rounded p-1.5 transition-colors disabled:opacity-40"
                       style={{ color: 'var(--text-muted)' }}
                       onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--accent-error)')}
                       onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-muted)')}
-                      aria-label={`Remove recipient ${index + 1}`}
+                      aria-label={`Remove wallet ${index + 1}`}
+                      title="Remove"
                     >
                       <Trash2 className="h-3.5 w-3.5" />
                     </button>
@@ -256,31 +214,43 @@ export function PlatformFeeSection({ state }: { state: AuthorityConsoleState }) 
           )}
 
           <div
-            className="flex items-center justify-between px-3 py-2.5"
+            className="flex flex-wrap items-center justify-between gap-2 px-3 py-2"
             style={{ borderTop: '1px solid var(--border-primary)' }}
           >
-            <span className="text-[11px] font-medium uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
-              Total share
-            </span>
-            <span
-              className="font-mono text-xs font-semibold"
-              style={{ color: totalOk ? 'var(--accent-success)' : 'var(--accent-error)' }}
+            <Button
+              variant="ghost"
+              size="sm"
+              leftIcon={<Plus className="h-3.5 w-3.5" />}
+              onClick={addRecipient}
+              disabled={disabled || draft.recipients.length >= MAX_PLATFORM_FEE_RECIPIENTS}
             >
-              {bpsToPercent(totalBps)} ({totalBps} / 10000 bps)
-            </span>
+              Add wallet
+            </Button>
+            <div className="flex items-center gap-3">
+              {draft.recipients.length > 1 && (
+                <button
+                  type="button"
+                  onClick={splitEvenly}
+                  disabled={disabled}
+                  className="text-[11px] underline-offset-2 hover:underline disabled:opacity-40"
+                  style={{ color: 'var(--text-tertiary)' }}
+                >
+                  Split evenly
+                </button>
+              )}
+              {changed('recipients') && (
+                <button
+                  type="button"
+                  onClick={() => revertChange('recipients')}
+                  className="text-[11px] underline-offset-2 hover:underline"
+                  style={{ color: 'var(--text-tertiary)' }}
+                >
+                  Undo changes
+                </button>
+              )}
+            </div>
           </div>
         </div>
-
-        {changed('recipients') && (
-          <button
-            type="button"
-            onClick={() => revertChange('recipients')}
-            className="mt-2 text-[11px] underline-offset-2 hover:underline"
-            style={{ color: 'var(--text-tertiary)' }}
-          >
-            Revert recipients to chain state
-          </button>
-        )}
       </div>
 
       {groupErrors.length > 0 && (

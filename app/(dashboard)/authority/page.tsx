@@ -17,7 +17,7 @@ export default function AuthorityPage() {
   const { hasPermission, isLoading } = useAuth()
 
   return (
-    <MainLayout breadcrumbs={[{ label: 'Authority' }]}>
+    <MainLayout breadcrumbs={[{ label: 'Fees & minting' }]}>
       {isLoading ? null : hasPermission('settings:write') ? (
         <WalletProvider>
           <AuthorityConsole />
@@ -28,8 +28,8 @@ export default function AuthorityPage() {
             Not available for your role
           </h1>
           <p className="mt-1.5 text-xs" style={{ color: 'var(--text-tertiary)' }}>
-            The on-chain authority console changes platform-wide money and safety settings, so it is
-            limited to super admins. Ask one of them to make the change.
+            This page changes platform-wide fees and can pause all minting, so it is limited to
+            super admins. Ask one of them to make the change.
           </p>
         </div>
       )}

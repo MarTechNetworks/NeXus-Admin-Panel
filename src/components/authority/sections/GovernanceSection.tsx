@@ -2,12 +2,14 @@
 
 /**
  * GovernanceSection — the two instructions that act on the program itself:
- * rotating the registry key, and the upgrade timelock.
+ * handing ownership to another wallet, and the upgrade timelock.
  *
  * Both are staged into the same transaction as everything else, but they are
  * kept in their own card with danger styling because their failure modes are
  * different in kind: one hands over control, the other halts every mint on the
- * platform until it is resolved.
+ * platform until it is resolved. The wording avoids the instruction names
+ * (propose/accept_registry_admin, initiate/complete_upgrade) on purpose — the
+ * review dialog's technical details still list them for whoever wants them.
  */
 import { AlertTriangle, KeyRound, Timer } from 'lucide-react'
 import { Callout, Field, Section, TextInput } from '../primitives'
@@ -48,23 +50,23 @@ export function GovernanceSection({ state }: { state: AuthorityConsoleState }) {
   }
 
   const actions: { value: UpgradeAction; label: string; hint: string; available: boolean }[] = [
-    { value: 'none', label: 'No change', hint: 'Leave the timelock as it is.', available: true },
+    { value: 'none', label: 'No change', hint: 'Leave things as they are.', available: true },
     {
       value: 'initiate',
-      label: 'Initiate',
-      hint: 'Opens the window. Minting stops platform-wide until it closes.',
+      label: 'Schedule',
+      hint: 'Pauses minting platform-wide until the upgrade is completed or cancelled.',
       available: !pending,
     },
     {
       value: 'complete',
       label: 'Complete',
-      hint: 'Closes the window and restores minting. Only after the delay elapses.',
+      hint: 'Finishes the upgrade and reopens minting. Only once the waiting period is over.',
       available: pending,
     },
     {
       value: 'cancel',
       label: 'Cancel',
-      hint: 'Abandons the pending upgrade and unblocks minting immediately.',
+      hint: 'Drops the scheduled upgrade and reopens minting right away.',
       available: pending,
     },
   ]
@@ -72,24 +74,22 @@ export function GovernanceSection({ state }: { state: AuthorityConsoleState }) {
   return (
     <Section
       id="governance"
-      title="Governance"
-      description="Registry key rotation and the program upgrade timelock. Both are recorded on the registry account and both are two-step by design."
+      title="Ownership & upgrades"
+      description="Hand the platform to another wallet, or schedule a program upgrade. Both take two steps on purpose, so a typo cannot lock you out."
       icon={<KeyRound className="h-4 w-4" />}
       tone="danger"
       changedCount={changedCount}
     >
       {/* ── Authority rotation ─────────────────────────────────────────── */}
       <Field
-        label="Propose new registry authority"
+        label="Transfer ownership to"
         htmlFor="pendingAuthority"
         changed={rotationChanged}
         onRevert={() => revertChange('pendingAuthority')}
         error={errorFor('pendingAuthority')}
         hint={
           <>
-            Records a proposal only — the named wallet must call{' '}
-            <code>accept_registry_admin</code> itself before control moves, which is what stops a
-            typo from locking the platform out. Current authority:{' '}
+            Nothing moves until the new wallet accepts from its side. Current owner:{' '}
             <span className="font-mono">{shortAddress(registry.authority, 6, 6)}</span>.
           </>
         }
@@ -99,7 +99,7 @@ export function GovernanceSection({ state }: { state: AuthorityConsoleState }) {
           mono
           value={draft.pendingAuthority}
           onChange={(value) => patchDraft({ pendingAuthority: value })}
-          placeholder="Leave empty to keep the current authority"
+          placeholder="New owner's wallet address — leave empty to keep things as they are"
           invalid={!!errorFor('pendingAuthority')}
           disabled={disabled}
         />
@@ -108,9 +108,9 @@ export function GovernanceSection({ state }: { state: AuthorityConsoleState }) {
       {registry.pendingAuthority && (
         <div className="mt-2">
           <Callout level="warning">
-            A rotation to{' '}
+            A transfer to{' '}
             <span className="font-mono">{shortAddress(registry.pendingAuthority, 6, 6)}</span> is
-            already pending. Proposing a different wallet replaces it.
+            already waiting to be accepted. Entering a different wallet replaces it.
           </Callout>
         </div>
       )}
@@ -120,19 +120,19 @@ export function GovernanceSection({ state }: { state: AuthorityConsoleState }) {
         <div className="mb-3 flex items-center gap-2">
           <Timer className="h-3.5 w-3.5" style={{ color: 'var(--text-tertiary)' }} />
           <h3 className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--text-tertiary)' }}>
-            Upgrade timelock
+            Program upgrade
           </h3>
         </div>
 
         {pending && (
           <div className="mb-3">
             <Callout level="warning">
-              Upgrade to{' '}
+              An upgrade to{' '}
               <span className="font-mono">
                 {shortAddress(registry.pendingUpgradeProgram ?? '', 6, 6)}
               </span>{' '}
-              is pending — every mint is blocked until it completes or is cancelled. Unlocks{' '}
-              {formatUnixTime(registry.upgradeCompletionTime)} (
+              is scheduled — nobody can mint until it is completed or cancelled. It can be completed
+              from {formatUnixTime(registry.upgradeCompletionTime)} (
               {registry.upgradeCompletionTime ? formatCountdown(registry.upgradeCompletionTime) : '—'}).
             </Callout>
           </div>
@@ -173,10 +173,10 @@ export function GovernanceSection({ state }: { state: AuthorityConsoleState }) {
         {draft.upgrade.action === 'initiate' && (
           <div className="mt-3 grid gap-3 lg:grid-cols-2">
             <Field
-              label="New program id"
+              label="New program address"
               htmlFor="newProgramId"
               error={errorFor('newProgramId')}
-              hint="The address the program will be upgraded to. This is recorded on chain; the actual deploy still happens with the Solana CLI."
+              hint="Where the program moves to. This only records the plan on chain — the deploy itself still happens from the command line."
             >
               <TextInput
                 id="newProgramId"
@@ -190,10 +190,10 @@ export function GovernanceSection({ state }: { state: AuthorityConsoleState }) {
             </Field>
 
             <Field
-              label="Delay"
+              label="Waiting period"
               htmlFor="upgradeDelay"
               error={errorFor('upgradeDelay')}
-              hint="How long the window stays open before complete_upgrade is allowed. The program enforces 24 hours to 7 days."
+              hint="How long before the upgrade can be completed. Between 24 hours and 7 days."
             >
               <select
                 id="upgradeDelay"

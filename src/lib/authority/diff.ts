@@ -90,7 +90,7 @@ export function diffAuthority(
     changes.push({
       key: 'feeSol',
       group: 'fees',
-      label: 'Platform fee per NFT (new collections)',
+      label: 'Platform fee per NFT',
       before: formatSolAmount(snapshot.feeConfig.feeLamports),
       after: formatSolAmount(draftFeeLamports.toString()),
       instruction: feeIx,
@@ -101,16 +101,17 @@ export function diffAuthority(
     changes.push({
       key: 'recipients',
       group: 'recipients',
-      label: 'Fee recipients',
+      label: 'Fee goes to',
       before: describeRecipients(snapshot.feeConfig.recipients),
       after: describeRecipients(draft.recipients),
       instruction: feeIx,
     })
   }
 
-  // Creating the PDA with values that already match the backend defaults is a
-  // real instruction with no field-level diff behind it, so it only appears once
-  // the operator has asked for it and nothing else in this section is staged.
+  // Publishing the on-chain fee settings with values that already match the
+  // backend defaults is a real instruction with no field-level diff behind it,
+  // so it only appears once the owner has asked for it and nothing else in
+  // this section is staged.
   if (
     !snapshot.feeConfig.exists &&
     draft.createFeeConfig &&
@@ -120,9 +121,9 @@ export function diffAuthority(
     changes.push({
       key: 'initFeeConfig',
       group: 'fees',
-      label: 'Platform fee config PDA',
-      before: 'not created',
-      after: `created (${draft.feeSol} SOL per NFT, ${describeRecipients(draft.recipients)})`,
+      label: 'Fee settings on chain',
+      before: 'not published',
+      after: `published (${draft.feeSol} SOL per NFT → ${describeRecipients(draft.recipients)})`,
       instruction: 'init_platform_fee_config',
     })
   }
@@ -133,9 +134,9 @@ export function diffAuthority(
     changes.push({
       key: 'emergencyPause',
       group: 'emergency',
-      label: 'Global emergency pause',
-      before: currentPause ? 'active' : 'off',
-      after: draft.emergencyPause ? 'active' : 'off',
+      label: 'Minting',
+      before: currentPause ? 'paused everywhere' : 'live',
+      after: draft.emergencyPause ? 'paused everywhere' : 'live',
       instruction: draft.emergencyPause ? 'emergency_pause_all' : 'emergency_unpause_all',
     })
   }
@@ -150,7 +151,7 @@ export function diffAuthority(
       changes.push({
         key: `collection:${c.pda}:fee`,
         group: 'collections',
-        label: `${collectionLabel(c)} — platform fee per NFT`,
+        label: `${collectionLabel(c)} — platform fee`,
         before: formatSolAmount(c.platformFeeLamports),
         after: formatSolAmount(overrideLamports.toString()),
         instruction: 'update_platform_fee',
@@ -161,7 +162,7 @@ export function diffAuthority(
       changes.push({
         key: `collection:${c.pda}:featured`,
         group: 'collections',
-        label: `${collectionLabel(c)} — on-chain featured flag`,
+        label: `${collectionLabel(c)} — featured`,
         before: c.featured ? 'featured' : 'not featured',
         after: override.featured ? 'featured' : 'not featured',
         instruction: 'update_featured',
@@ -176,11 +177,11 @@ export function diffAuthority(
     changes.push({
       key: 'pendingAuthority',
       group: 'admin',
-      label: 'Proposed registry authority',
+      label: 'Transfer ownership to',
       before: snapshot.registry?.pendingAuthority
-        ? shortAddress(snapshot.registry.pendingAuthority, 6, 6)
-        : 'none',
-      after: shortAddress(proposed, 6, 6),
+        ? `${shortAddress(snapshot.registry.pendingAuthority, 6, 6)} (waiting to accept)`
+        : 'no transfer pending',
+      after: `${shortAddress(proposed, 6, 6)} (once they accept)`,
       instruction: 'propose_registry_admin',
     })
   }
@@ -191,27 +192,27 @@ export function diffAuthority(
     changes.push({
       key: 'upgrade',
       group: 'upgrade',
-      label: 'Upgrade timelock',
-      before: 'idle',
-      after: `initiate → ${shortAddress(newProgramId.trim(), 6, 6)} after ${Math.round(delaySeconds / 3_600)}h`,
+      label: 'Program upgrade',
+      before: 'none scheduled',
+      after: `scheduled → ${shortAddress(newProgramId.trim(), 6, 6)}, completable after ${Math.round(delaySeconds / 3_600)}h (minting pauses until then)`,
       instruction: 'initiate_upgrade',
     })
   } else if (action === 'cancel') {
     changes.push({
       key: 'upgrade',
       group: 'upgrade',
-      label: 'Upgrade timelock',
-      before: `pending → ${shortAddress(snapshot.registry?.pendingUpgradeProgram ?? '', 6, 6)}`,
-      after: 'cancelled',
+      label: 'Program upgrade',
+      before: `scheduled → ${shortAddress(snapshot.registry?.pendingUpgradeProgram ?? '', 6, 6)}`,
+      after: 'cancelled (minting resumes)',
       instruction: 'cancel_upgrade',
     })
   } else if (action === 'complete') {
     changes.push({
       key: 'upgrade',
       group: 'upgrade',
-      label: 'Upgrade timelock',
-      before: `pending → ${shortAddress(snapshot.registry?.pendingUpgradeProgram ?? '', 6, 6)}`,
-      after: 'completed (window closed, minting resumes)',
+      label: 'Program upgrade',
+      before: `scheduled → ${shortAddress(snapshot.registry?.pendingUpgradeProgram ?? '', 6, 6)}`,
+      after: 'completed (minting resumes)',
       instruction: 'complete_upgrade',
     })
   }
@@ -236,7 +237,7 @@ export function validateAuthority(
       level: 'error',
       group: 'admin',
       message:
-        'No registry account exists for this program id. Run initialize_registry from the deploy scripts before using this console.',
+        'The program has not been set up on this network yet. Deploying the first collection from the public site sets it up automatically.',
     })
     return issues
   }
@@ -249,21 +250,21 @@ export function validateAuthority(
         level: 'error',
         group: 'fees',
         key: 'feeSol',
-        message: 'Platform fee must be a SOL amount with at most 9 decimals.',
+        message: 'Enter the fee as a SOL amount, e.g. 0.01 (up to 9 decimals).',
       })
     } else if (feeLamports > BigInt(MAX_PLATFORM_FEE_LAMPORTS)) {
       issues.push({
         level: 'error',
         group: 'fees',
         key: 'feeSol',
-        message: `The program caps the platform fee at ${formatSolAmount(MAX_PLATFORM_FEE_LAMPORTS)} per NFT.`,
+        message: `The most the fee can be is ${formatSolAmount(MAX_PLATFORM_FEE_LAMPORTS)} per NFT.`,
       })
     } else if (feeLamports.toString() !== snapshot.feeConfig.feeLamports && snapshot.collections.length > 0) {
       issues.push({
         level: 'warning',
         group: 'fees',
         key: 'feeSol',
-        message: `This sets the fee for collections created from now on. The ${snapshot.collections.length} existing collection${snapshot.collections.length === 1 ? '' : 's'} keep their current fee — reprice them individually in the Collections section if that is intended.`,
+        message: `Applies to collections created from now on. The ${snapshot.collections.length} existing collection${snapshot.collections.length === 1 ? '' : 's'} keep their current fee — change them under Advanced if you want them repriced too.`,
       })
     }
 
@@ -271,14 +272,14 @@ export function validateAuthority(
       issues.push({
         level: 'error',
         group: 'recipients',
-        message: 'At least one fee recipient is required — the program rejects an empty list.',
+        message: 'Add at least one wallet to receive the fee.',
       })
     }
     if (draft.recipients.length > MAX_PLATFORM_FEE_RECIPIENTS) {
       issues.push({
         level: 'error',
         group: 'recipients',
-        message: `PlatformFeeConfig holds at most ${MAX_PLATFORM_FEE_RECIPIENTS} recipients.`,
+        message: `Up to ${MAX_PLATFORM_FEE_RECIPIENTS} wallets can receive the fee.`,
       })
     }
 
@@ -290,7 +291,7 @@ export function validateAuthority(
           level: 'error',
           group: 'recipients',
           key: `recipient:${i}`,
-          message: `Recipient ${i + 1} is not a valid wallet address.`,
+          message: `Wallet ${i + 1} is not a valid Solana address.`,
         })
         return
       }
@@ -299,7 +300,7 @@ export function validateAuthority(
           level: 'error',
           group: 'recipients',
           key: `recipient:${i}`,
-          message: `Recipient ${i + 1} is listed twice — merge the shares instead.`,
+          message: `Wallet ${i + 1} is listed twice — give it one combined share instead.`,
         })
       }
       seen.add(address)
@@ -308,7 +309,7 @@ export function validateAuthority(
           level: 'error',
           group: 'recipients',
           key: `recipient:${i}`,
-          message: `Recipient ${i + 1} needs a share above zero.`,
+          message: `Wallet ${i + 1} needs a share above 0%.`,
         })
       }
     })
@@ -318,7 +319,7 @@ export function validateAuthority(
       issues.push({
         level: 'error',
         group: 'recipients',
-        message: `Shares must total exactly 100% (${PLATFORM_FEE_SHARE_TOTAL_BPS} bps). Currently ${bpsToPercent(total)}.`,
+        message: `The shares must add up to 100% — right now they add up to ${bpsToPercent(total)}.`,
       })
     }
 
@@ -329,7 +330,7 @@ export function validateAuthority(
         issues.push({
           level: 'error',
           group: 'recipients',
-          message: `${shortAddress(row.address, 6, 6)} is not rent exempt (${lamportsToSol(row.lamports)} SOL). Fund it before saving — the program rejects the whole transaction otherwise.`,
+          message: `Wallet ${shortAddress(row.address, 6, 6)} is nearly empty (${lamportsToSol(row.lamports)} SOL). Send it at least 0.001 SOL before saving, or the save will fail.`,
         })
       }
     }
@@ -346,7 +347,7 @@ export function validateAuthority(
         level: 'error',
         group: 'collections',
         key: `collection:${c.pda}:fee`,
-        message: `${collectionLabel(c)}: fee must be a SOL amount between 0 and ${formatSolAmount(MAX_PLATFORM_FEE_LAMPORTS)} (at most 9 decimals).`,
+        message: `${collectionLabel(c)}: enter a SOL amount between 0 and ${formatSolAmount(MAX_PLATFORM_FEE_LAMPORTS)}.`,
       })
       continue
     }
@@ -355,7 +356,7 @@ export function validateAuthority(
         level: 'warning',
         group: 'collections',
         key: `collection:${c.pda}:fee`,
-        message: `${collectionLabel(c)} already has ${c.minted} mint${c.minted === 1 ? '' : 's'}. The new fee applies to future mints only.`,
+        message: `${collectionLabel(c)} has already sold ${c.minted}. The new fee applies to mints from now on.`,
       })
     }
   }
@@ -368,21 +369,21 @@ export function validateAuthority(
         level: 'error',
         group: 'admin',
         key: 'pendingAuthority',
-        message: 'Proposed authority is not a valid wallet address.',
+        message: 'That is not a valid Solana wallet address.',
       })
     } else if (proposed === snapshot.registry.authority) {
       issues.push({
         level: 'error',
         group: 'admin',
         key: 'pendingAuthority',
-        message: 'That is already the current authority.',
+        message: 'That wallet is already the owner.',
       })
     } else {
       issues.push({
         level: 'warning',
         group: 'admin',
         message:
-          'Rotation is two-step: this only records the proposal. The new wallet must call accept_registry_admin before control moves — until then you keep the key.',
+          'Nothing moves yet: the new wallet has to accept the transfer from its side. Until it does, you stay the owner.',
       })
     }
   }
@@ -396,7 +397,7 @@ export function validateAuthority(
       issues.push({
         level: 'error',
         group: 'upgrade',
-        message: 'An upgrade is already pending. Cancel it before initiating another.',
+        message: 'An upgrade is already scheduled. Cancel it before scheduling another.',
       })
     }
     if (!isValidAddress(newProgramId.trim())) {
@@ -404,7 +405,7 @@ export function validateAuthority(
         level: 'error',
         group: 'upgrade',
         key: 'newProgramId',
-        message: 'New program id is not a valid address.',
+        message: 'That is not a valid program address.',
       })
     }
     if (delaySeconds < MIN_UPGRADE_DELAY_SECONDS || delaySeconds > MAX_UPGRADE_DELAY_SECONDS) {
@@ -412,7 +413,7 @@ export function validateAuthority(
         level: 'error',
         group: 'upgrade',
         key: 'upgradeDelay',
-        message: 'Delay must be between 24 hours and 7 days.',
+        message: 'The waiting period must be between 24 hours and 7 days.',
       })
     }
     // initiate_upgrade requires !emergency_pause. Unpausing in the same batch is
@@ -422,14 +423,14 @@ export function validateAuthority(
         level: 'error',
         group: 'upgrade',
         message:
-          'The platform is under emergency pause. Lift the pause in this same batch (or first) — initiate_upgrade refuses to run while it is active.',
+          'Minting is paused platform-wide. Resume it (it can be in the same save) before scheduling an upgrade.',
       })
     }
     issues.push({
       level: 'warning',
       group: 'upgrade',
       message:
-        'While an upgrade is pending, every mint on the platform is blocked until it is completed or cancelled.',
+        'Nobody can mint anything on the platform until the upgrade is completed or cancelled.',
     })
   }
 
@@ -437,7 +438,7 @@ export function validateAuthority(
     issues.push({
       level: 'error',
       group: 'upgrade',
-      message: 'There is no pending upgrade to ' + action + '.',
+      message: 'There is no scheduled upgrade to ' + action + '.',
     })
   }
 
@@ -449,7 +450,7 @@ export function validateAuthority(
       issues.push({
         level: 'error',
         group: 'upgrade',
-        message: `The timelock has not elapsed — complete_upgrade unlocks at ${formatUnixTime(snapshot.registry.upgradeCompletionTime)}.`,
+        message: `The waiting period is not over — the upgrade can be completed from ${formatUnixTime(snapshot.registry.upgradeCompletionTime)}.`,
       })
     }
   }
@@ -459,7 +460,7 @@ export function validateAuthority(
     issues.push({
       level: 'warning',
       group: 'emergency',
-      message: `This halts minting on all ${snapshot.registry.collectionCount} registered collection${snapshot.registry.collectionCount === 1 ? '' : 's'} immediately.`,
+      message: `This stops minting on all ${snapshot.registry.collectionCount} collection${snapshot.registry.collectionCount === 1 ? '' : 's'} the moment you save. Buyers see it immediately.`,
     })
   }
 
@@ -467,7 +468,7 @@ export function validateAuthority(
     issues.push({
       level: 'warning',
       group: 'collections',
-      message: `The registry is at its ${MAX_COLLECTIONS}-collection cap; new deployments will not be registered.`,
+      message: `The platform is at its ${MAX_COLLECTIONS}-collection limit; new collections cannot be deployed until that changes.`,
     })
   }
 

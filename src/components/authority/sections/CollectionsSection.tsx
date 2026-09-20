@@ -75,8 +75,8 @@ export function CollectionsSection({ state }: { state: AuthorityConsoleState }) 
   return (
     <Section
       id="collections"
-      title="Per-collection overrides"
-      description="Collection.platform_fee_lamports and Collection.featured are registry-authority fields — the creator cannot change either. The fee is frozen at creation, so changing the global default above does not touch these rows; this is where a live collection gets repriced. Everything else on a collection belongs to its own authority."
+      title="Per-collection fees"
+      description="Each collection keeps the platform fee it was created with, so changing the fee above only affects new collections. Reprice a live one here. Featured is the on-chain flag; the homepage order is set on the Featured page."
       icon={<LayoutGrid className="h-4 w-4" />}
       changedCount={changedCount}
       aside={
@@ -86,14 +86,14 @@ export function CollectionsSection({ state }: { state: AuthorityConsoleState }) 
       }
     >
       {snapshot.unreadableCollections.length > 0 && (
-        <UnreadableCollections rows={snapshot.unreadableCollections} programId={snapshot.programId} />
+        <UnreadableCollections rows={snapshot.unreadableCollections} />
       )}
 
       {snapshot.collections.length === 0 ? (
         <Callout level="info">
           {snapshot.unreadableCollections.length > 0
-            ? 'Every collection in the registry predates the current program build. Deploy one from the public site and it will appear here.'
-            : 'The registry lists no collections yet. Deploy one from the public site and it will appear here.'}
+            ? 'Every collection so far was created by an older version of the program. New ones will appear here.'
+            : 'No collections yet. Deploy one from the public site and it will appear here.'}
         </Callout>
       ) : (
         <>
@@ -131,7 +131,7 @@ export function CollectionsSection({ state }: { state: AuthorityConsoleState }) 
               size="sm"
               onClick={() => setOnlyChanged((v) => !v)}
             >
-              Staged only
+              Unsaved only
             </Button>
           </div>
 
@@ -139,7 +139,7 @@ export function CollectionsSection({ state }: { state: AuthorityConsoleState }) 
           {!disabled && rows.length > 1 && (
             <div className="panel-subtle mb-3 flex flex-wrap items-center gap-3 px-3 py-2.5">
               <span className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
-                Set fee for all {rows.length} shown
+                Set all {rows.length} shown to
               </span>
               <div className="flex w-36 items-center gap-2">
                 <TextInput
@@ -313,36 +313,31 @@ export function CollectionsSection({ state }: { state: AuthorityConsoleState }) 
 /**
  * Registry entries the current program build cannot deserialize. They are listed
  * rather than dropped because the registry's collection count includes them and
- * the operator would otherwise see "36 collections" above a table of 3. There is
+ * the owner would otherwise see "36 collections" above a table of 3. There is
  * nothing to stage here: the program rejects these accounts too, so an
  * `update_featured` or `update_platform_fee` at one of them would revert.
+ * Kept to one muted line by default — it is history, not a problem to fix.
  */
-function UnreadableCollections({ rows, programId }: { rows: UnreadableCollection[]; programId: string }) {
+function UnreadableCollections({ rows }: { rows: UnreadableCollection[] }) {
   const [open, setOpen] = useState(false)
   return (
     <div className="mb-4">
-      <Callout level="warning">
-        <button
-          type="button"
-          onClick={() => setOpen((v) => !v)}
-          className="flex w-full items-center gap-1.5 text-left font-medium"
-          aria-expanded={open}
-        >
-          <span className="flex-1">
-            {rows.length} {rows.length === 1 ? 'collection' : 'collections'} in the registry cannot be read by the current
-            program build and cannot be edited from here.
-          </span>
-          <ChevronDown
-            className="h-3.5 w-3.5 shrink-0 transition-transform"
-            style={{ transform: open ? 'rotate(180deg)' : undefined }}
-          />
-        </button>
-        <p className="mt-1" style={{ color: 'var(--text-tertiary)' }}>
-          They were created before program <span className="font-mono">{shortAddress(programId, 4, 4)}</span> changed
-          the Collection account layout. The program has no instruction to remove a registry entry, so they stay
-          listed; if they matter, redeploy them as new collections and soft-delete the old rows in the database.
-        </p>
-      </Callout>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center gap-1.5 text-left text-[11px]"
+        style={{ color: 'var(--text-muted)' }}
+        aria-expanded={open}
+      >
+        <span className="flex-1">
+          {rows.length} older {rows.length === 1 ? 'collection was' : 'collections were'} created by a previous
+          version of the program and can&apos;t be edited here.
+        </span>
+        <ChevronDown
+          className="h-3.5 w-3.5 shrink-0 transition-transform"
+          style={{ transform: open ? 'rotate(180deg)' : undefined }}
+        />
+      </button>
 
       {open && (
         <ul
