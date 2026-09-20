@@ -130,7 +130,7 @@ jobs:
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          key: ${{ secrets.VPS_SSH_KEY }}
           source: deploy-zero-downtime.sh
           target: /var/www/nexus-admin
           overwrite: true
@@ -142,7 +142,7 @@ jobs:
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          key: ${{ secrets.VPS_SSH_KEY }}
           timeout: 300s
           # The script waits up to 900s for the host deploy lock (backend,
           # frontend and admin all take it) and then on the health probe, so the
