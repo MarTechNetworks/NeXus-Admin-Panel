@@ -13,13 +13,14 @@
  * stores. They are allowed to differ, and pretending otherwise would hide it.
  */
 import { useMemo, useState } from 'react'
-import { LayoutGrid, Search, Star, X } from 'lucide-react'
+import { ChevronDown, LayoutGrid, Search, Star, X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { gradientFor, resolveUrl } from '@/components/featured/ui'
 import { Callout, Section, TextInput } from '../primitives'
 import { formatSolAmount, lamportsToSol, shortAddress, solToLamports } from '@/lib/authority/format'
 import { COLLECTION_STATUS_LABELS, MAX_PLATFORM_FEE_LAMPORTS } from '@/lib/solana/program'
 import type { AuthorityConsoleState } from '@/lib/authority/useAuthorityConsole'
+import type { UnreadableCollection } from '@/lib/authority/types'
 
 const PAGE_SIZE = 25
 
@@ -84,9 +85,15 @@ export function CollectionsSection({ state }: { state: AuthorityConsoleState }) 
         </span>
       }
     >
+      {snapshot.unreadableCollections.length > 0 && (
+        <UnreadableCollections rows={snapshot.unreadableCollections} programId={snapshot.programId} />
+      )}
+
       {snapshot.collections.length === 0 ? (
         <Callout level="info">
-          The registry lists no collections yet. Deploy one from the public site and it will appear here.
+          {snapshot.unreadableCollections.length > 0
+            ? 'Every collection in the registry predates the current program build. Deploy one from the public site and it will appear here.'
+            : 'The registry lists no collections yet. Deploy one from the public site and it will appear here.'}
         </Callout>
       ) : (
         <>
@@ -300,5 +307,72 @@ export function CollectionsSection({ state }: { state: AuthorityConsoleState }) 
         </div>
       )}
     </Section>
+  )
+}
+
+/**
+ * Registry entries the current program build cannot deserialize. They are listed
+ * rather than dropped because the registry's collection count includes them and
+ * the operator would otherwise see "36 collections" above a table of 3. There is
+ * nothing to stage here: the program rejects these accounts too, so an
+ * `update_featured` or `update_platform_fee` at one of them would revert.
+ */
+function UnreadableCollections({ rows, programId }: { rows: UnreadableCollection[]; programId: string }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="mb-4">
+      <Callout level="warning">
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className="flex w-full items-center gap-1.5 text-left font-medium"
+          aria-expanded={open}
+        >
+          <span className="flex-1">
+            {rows.length} {rows.length === 1 ? 'collection' : 'collections'} in the registry cannot be read by the current
+            program build and cannot be edited from here.
+          </span>
+          <ChevronDown
+            className="h-3.5 w-3.5 shrink-0 transition-transform"
+            style={{ transform: open ? 'rotate(180deg)' : undefined }}
+          />
+        </button>
+        <p className="mt-1" style={{ color: 'var(--text-tertiary)' }}>
+          They were created before program <span className="font-mono">{shortAddress(programId, 4, 4)}</span> changed
+          the Collection account layout. The program has no instruction to remove a registry entry, so they stay
+          listed; if they matter, redeploy them as new collections and soft-delete the old rows in the database.
+        </p>
+      </Callout>
+
+      {open && (
+        <ul
+          className="mt-2 max-h-72 divide-y overflow-y-auto rounded-lg text-xs"
+          style={{
+            border: '1px solid var(--border-primary)',
+            background: 'rgba(8, 9, 13, 0.5)',
+            borderColor: 'var(--border-primary)',
+          }}
+        >
+          {rows.map((row) => (
+            <li key={row.pda} className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 px-3 py-2">
+              <span className="font-medium" style={{ color: 'var(--text-primary)' }}>
+                {row.name ?? shortAddress(row.pda, 6, 4)}
+              </span>
+              <span className="font-mono text-[10px]" style={{ color: 'var(--text-muted)' }} title={row.pda}>
+                {shortAddress(row.pda, 6, 6)}
+              </span>
+              {row.mint && (
+                <span className="font-mono text-[10px]" style={{ color: 'var(--text-muted)' }} title={row.mint}>
+                  mint {shortAddress(row.mint, 4, 4)}
+                </span>
+              )}
+              <span className="basis-full text-[11px]" style={{ color: 'var(--text-tertiary)' }}>
+                {row.reason}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   )
 }

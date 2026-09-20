@@ -11,6 +11,7 @@ import {
   LayoutGrid,
   ScrollText,
   Settings,
+  ShieldCheck,
   Star,
   TrendingUp,
   Users,
@@ -28,6 +29,8 @@ const navItems: { href: string; label: string; icon: LucideIcon; permission?: st
   { href: '/revenue', label: 'Revenue', icon: TrendingUp, permission: 'revenue:read' },
   // On-chain, not database — signing happens here, so it sits above the DB-only pages.
   { href: '/authority', label: 'Authority', icon: KeyRound, permission: 'settings:write' },
+  // The GuardianZ creator console: mainnet, signed by the collection's own wallet.
+  { href: '/guardianz', label: 'GuardianZ', icon: ShieldCheck, permission: 'collections:write' },
   { href: '/users', label: 'Users', icon: Users, permission: 'users:read' },
   { href: '/settings', label: 'Settings', icon: Settings, permission: 'settings:read' },
   { href: '/logs', label: 'Activity', icon: ScrollText, permission: 'logs:read' },

@@ -78,6 +78,16 @@ export const MIN_UPGRADE_DELAY_SECONDS = 86_400
 export const MAX_UPGRADE_DELAY_SECONDS = 7 * 86_400
 /** CollectionRegistry::MAX_COLLECTIONS. */
 export const MAX_COLLECTIONS = 300
+/** 8-byte discriminator + Collection::INIT_SPACE (394) under the flat-fee layout. */
+export const COLLECTION_ACCOUNT_SIZE = 402
+/**
+ * Size of a Collection created under the percentage-fee build (`platform_fee_bps:
+ * u16`, 388 + 8). The registry never forgets a collection, and the program has no
+ * prune instruction, so these stay listed after a redeploy — and the current IDL
+ * cannot decode them (the 6-byte shift lands `featured` on the first byte of
+ * `metadata_uri`, hence "Invalid bool: 105" — that's the `i` in `ipfs://`).
+ */
+export const LEGACY_COLLECTION_ACCOUNT_SIZE = 396
 
 /** UpgradeState as stored in registry.upgradeState. */
 export const UPGRADE_STATE = {
@@ -175,11 +185,22 @@ interface AccountNamespace {
     fetchNullable(address: PublicKey): Promise<PlatformFeeConfigAccount | null>
   }
   collection: {
-    fetchMultiple(addresses: PublicKey[]): Promise<(CollectionAccount | null)[]>
     fetchNullable(address: PublicKey): Promise<CollectionAccount | null>
   }
 }
 
 export function accounts(program: Program): AccountNamespace {
   return program.account as unknown as AccountNamespace
+}
+
+/**
+ * Decode one raw Collection account. Throws on a layout mismatch — the caller
+ * decides whether that is fatal. Anchor's own `fetchMultiple` decodes the whole
+ * batch in one go, so a single pre-redeploy account would sink every collection
+ * with it; decoding one at a time is what lets the console keep rendering.
+ */
+export function decodeCollection(program: Program, data: Buffer): CollectionAccount {
+  // `data` is whatever web3.js handed back from getMultipleAccountsInfo — already
+  // a Buffer built by its own bundled `buffer`, so no Node global is touched here.
+  return program.coder.accounts.decode<CollectionAccount>('collection', data)
 }

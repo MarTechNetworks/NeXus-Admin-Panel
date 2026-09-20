@@ -244,7 +244,11 @@ export function RegistryHeader({
             accent={PURPLE}
             label="Collections"
             value={registry?.collectionCount ?? 0}
-            sub={`${snapshot.collections.length} readable on chain`}
+            sub={
+              snapshot.unreadableCollections.length
+                ? `${snapshot.collections.length} readable · ${snapshot.unreadableCollections.length} pre-redeploy`
+                : `${snapshot.collections.length} readable on chain`
+            }
           />
           <StatCard
             icon={paused ? Ban : ShieldCheck}

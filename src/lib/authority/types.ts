@@ -80,6 +80,24 @@ export interface CollectionSnapshot {
   imageUrl?: string
 }
 
+/**
+ * A registry entry the current IDL cannot decode. The registry keeps every PDA
+ * ever registered and the program has no prune instruction, so collections
+ * created under a previous account layout stay listed after a redeploy. They are
+ * not editable from here — the program itself fails to deserialize them, so any
+ * instruction addressed at one would revert — but hiding them would leave the
+ * "collections on chain" count unexplained.
+ */
+export interface UnreadableCollection {
+  pda: string
+  /** The mint seed sits at the same offset in every layout so far, so the DB name lookup still works. */
+  mint: string | null
+  dataLength: number
+  reason: string
+  name?: string
+  slug?: string
+}
+
 export interface AuthoritySnapshot {
   programId: string
   registryPda: string
@@ -88,6 +106,8 @@ export interface AuthoritySnapshot {
   registry: RegistrySnapshot | null
   feeConfig: PlatformFeeConfigSnapshot
   collections: CollectionSnapshot[]
+  /** Registered PDAs that exist but do not decode under the current layout. */
+  unreadableCollections: UnreadableCollection[]
   /** Backend-reported defaults, shown as context next to the on-chain values. */
   backendFeeLamports: number
   backendPlatformWallet: string

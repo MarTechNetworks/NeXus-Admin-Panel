@@ -110,10 +110,10 @@
         "Freeze-state gate check — returns TradingFrozen if this collection's freeze is active.",
         "",
         "IMPORTANT: This instruction does NOT perform the NFT transfer and does NOT enforce",
-        "the freeze on-chain. It is a freeze-state oracle only. Any caller can bypass it by",
-        "invoking Metaplex transfer instructions directly without calling this instruction.",
-        "Actual on-chain freeze enforcement must be configured via Metaplex rule sets",
-        "(FreezeDelegate) at the collection level — this program cannot block those CPIs.",
+        "the freeze on-chain by itself. It is a freeze-state oracle. For Core and Compressed",
+        "collections the real enforcement is the PermanentFreezeDelegate on the Core",
+        "collection (attached in `create_collection`, lifted by `thaw_collection` or the",
+        "sold-out mint); for Legacy/pNFT collections this oracle is all there is.",
         "",
         "Use this instruction in custom transfer flows that opt-in to the freeze check.",
         "Renamed from `transfer_nft` to prevent the false impression that calling it moves tokens."
@@ -730,8 +730,8 @@
     {
       "name": "get_collection_freeze_state",
       "docs": [
-        "Batch freeze state check — returns current freeze status for the entire collection.",
-        "Use this to determine whether to batch-freeze or batch-thaw all NFTs."
+        "Current freeze status for the entire collection. When this flips to false on a",
+        "collection that still has `has_collection_freeze` set, `thaw_collection` will succeed."
       ],
       "discriminator": [
         111,
@@ -1561,8 +1561,9 @@
     {
       "name": "should_freeze_nft",
       "docs": [
-        "Check if a newly minted NFT should have FreezeDelegate applied.",
-        "Returns true when the collection's freeze conditions are active."
+        "Returns true when the collection's freeze conditions are active.",
+        "(Historical name: assets no longer carry their own plugin — the freeze is on the",
+        "Core collection — but the answer is the same question.)"
       ],
       "discriminator": [
         170,
@@ -1581,6 +1582,70 @@
       ],
       "args": [],
       "returns": "bool"
+    },
+    {
+      "name": "thaw_collection",
+      "docs": [
+        "Lift a collection's on-chain trading freeze. Permissionless.",
+        "",
+        "Anyone may call it, because the *decision* is not theirs: it only succeeds once",
+        "the collection's own freeze conditions have lapsed — sold out, and/or the freeze",
+        "date passed — the same test `is_trading_frozen` applies. Whoever calls it just",
+        "pays the transaction fee. The sold-out case normally never needs it (the mint",
+        "that sells out thaws inline); it exists for the date case, and for a creator",
+        "who cleared the conditions with `update_trading_freeze` and wants the plugin to",
+        "follow.",
+        "",
+        "Only collections created with a freeze carry the plugin (`has_collection_freeze`);",
+        "on anything else this is `TradingNotFrozen`. Idempotent by construction: the bit",
+        "is cleared on success, so a second call is rejected the same way."
+      ],
+      "discriminator": [
+        61,
+        2,
+        169,
+        203,
+        29,
+        250,
+        170,
+        147
+      ],
+      "accounts": [
+        {
+          "name": "collection",
+          "writable": true
+        },
+        {
+          "name": "payer",
+          "docs": [
+            "Pays the transaction. Writable because Core names it as the plugin-update payer."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "core_collection",
+          "docs": [
+            "Metaplex Core collection (collection.mint) — the account carrying the freeze plugin."
+          ],
+          "writable": true
+        },
+        {
+          "name": "mint_authority",
+          "docs": [
+            "PDA that owns the plugin (the collection's update authority) and signs the CPI."
+          ]
+        },
+        {
+          "name": "mpl_core_program",
+          "address": "CoREENxT6tW1HoK8ypY1SxRMZTcVPm7R94rH4PZNhX7d"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
     },
     {
       "name": "update_allowlist_root",
@@ -2160,7 +2225,11 @@
       "name": "update_trading_freeze",
       "docs": [
         "Update trading freeze settings (authority only).",
-        "Can freeze until a specific timestamp, until sold out, or both."
+        "Can freeze until a specific timestamp, until sold out, or both.",
+        "",
+        "This only changes the *conditions*. It does not touch the Core collection's",
+        "freeze plugin: to actually lift a freeze early, clear the conditions here and",
+        "then call `thaw_collection` — the drop's edit page sends both in one transaction."
       ],
       "discriminator": [
         255,
@@ -2395,6 +2464,19 @@
         228,
         80,
         26
+      ]
+    },
+    {
+      "name": "TradingThawed",
+      "discriminator": [
+        132,
+        111,
+        186,
+        1,
+        78,
+        120,
+        159,
+        129
       ]
     },
     {
@@ -3255,6 +3337,30 @@
           {
             "name": "bump",
             "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "TradingThawed",
+      "docs": [
+        "The Core collection's freeze plugin was flipped to `frozen: false`. `by_authority`",
+        "distinguishes a creator lifting it early from the sold-out/date thaw."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "collection",
+            "type": "pubkey"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          },
+          {
+            "name": "by_authority",
+            "type": "bool"
           }
         ]
       }
