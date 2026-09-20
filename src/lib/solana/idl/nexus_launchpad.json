@@ -574,7 +574,7 @@
           "name": "platform_fee_config",
           "docs": [
             "Global platform fee config. Declared last so existing account indices are",
-            "unchanged. When present, its `default_fee_bps` overrides the `platform_fee_bps`",
+            "unchanged. When present, its `fee_lamports` overrides the `platform_fee_lamports`",
             "argument, making the platform fee something the creator cannot opt out of."
           ],
           "optional": true,
@@ -626,8 +626,8 @@
           }
         },
         {
-          "name": "platform_fee_bps",
-          "type": "u16"
+          "name": "platform_fee_lamports",
+          "type": "u64"
         }
       ]
     },
@@ -883,10 +883,9 @@
       "docs": [
         "Create the global platform fee config (registry authority only, once).",
         "",
-        "Launch configuration is 2 recipients at 8000/2000 bps (80/20), a 1% paid-mint",
-        "fee, and a 0.01 SOL flat fee on free mints — but every one of those is an",
-        "argument here, and `update_platform_fee_config` can change them later without",
-        "touching the program binary."
+        "Launch configuration is 2 recipients at 8000/2000 bps (80/20) and a flat",
+        "0.01 SOL per NFT — but both are arguments here, and `update_platform_fee_config`",
+        "can change them later without touching the program binary."
       ],
       "discriminator": [
         17,
@@ -978,12 +977,8 @@
           }
         },
         {
-          "name": "free_mint_fee_lamports",
+          "name": "fee_lamports",
           "type": "u64"
-        },
-        {
-          "name": "default_fee_bps",
-          "type": "u16"
         }
       ]
     },
@@ -1219,7 +1214,6 @@
         },
         {
           "name": "split_config",
-          "writable": true,
           "optional": true,
           "pda": {
             "seeds": [
@@ -2007,10 +2001,12 @@
     {
       "name": "update_platform_fee",
       "docs": [
-        "Update platform fee percentage (registry authority only).",
-        "Fee is in basis points: 500 = 5%. Hard cap: 1500 bps (15%).",
+        "Update one collection's flat platform fee (registry authority only).",
+        "Lamports per NFT; hard cap `MAX_PLATFORM_FEE_LAMPORTS` (1 SOL).",
         "Gated on the registry authority — only the platform can change this,",
-        "not individual collection creators."
+        "not individual collection creators. This is the ONLY way to reprice a",
+        "collection that already exists: the global config is copied in at creation",
+        "and never consulted again for the amount."
       ],
       "discriminator": [
         162,
@@ -2057,17 +2053,18 @@
       ],
       "args": [
         {
-          "name": "new_fee_bps",
-          "type": "u16"
+          "name": "new_fee_lamports",
+          "type": "u64"
         }
       ]
     },
     {
       "name": "update_platform_fee_config",
       "docs": [
-        "Retune the platform fee: recipients, split percentages, the paid-mint rate, and",
-        "the flat free-mint fee. Registry authority only. Takes effect on the next mint —",
-        "no redeploy, no migration."
+        "Retune the platform fee: recipients, split percentages, and the flat per-NFT",
+        "amount. Registry authority only. The split applies to the next mint of every",
+        "collection; the amount applies to collections created from now on (existing",
+        "ones keep the fee they were created with — see `update_platform_fee`)."
       ],
       "discriminator": [
         134,
@@ -2154,12 +2151,8 @@
           }
         },
         {
-          "name": "free_mint_fee_lamports",
+          "name": "fee_lamports",
           "type": "u64"
-        },
-        {
-          "name": "default_fee_bps",
-          "type": "u16"
         }
       ]
     },
@@ -2472,8 +2465,8 @@
     },
     {
       "code": 6005,
-      "name": "InvalidFeePercentage",
-      "msg": "Invalid fee percentage — must be 0-1500 basis points (15% hard cap)"
+      "name": "InvalidPlatformFee",
+      "msg": "Invalid platform fee — must be 0-1000000000 lamports per NFT (1 SOL hard cap)"
     },
     {
       "code": 6006,
@@ -2694,6 +2687,26 @@
       "code": 6049,
       "name": "InvalidPlatformFeeAccounts",
       "msg": "Invalid platform fee accounts — pass each configured recipient, in order, as writable"
+    },
+    {
+      "code": 6050,
+      "name": "InvalidTokenMetadataProgram",
+      "msg": "Invalid Token Metadata program or instructions sysvar"
+    },
+    {
+      "code": 6051,
+      "name": "InvalidBubblegumProgram",
+      "msg": "Invalid Bubblegum / account-compression / noop program"
+    },
+    {
+      "code": 6052,
+      "name": "InvalidCompressedTreeAccounts",
+      "msg": "Invalid compressed tree accounts — pass the collection tree record, merkle tree, tree config and Bubblegum CPI signer"
+    },
+    {
+      "code": 6053,
+      "name": "InvalidCollectionAccounts",
+      "msg": "Missing standard-specific collection accounts — pass them as remaining_accounts in the documented order"
     }
   ],
   "types": [
@@ -2785,8 +2798,8 @@
             "type": "i64"
           },
           {
-            "name": "platform_fee_bps",
-            "type": "u16"
+            "name": "platform_fee_lamports",
+            "type": "u64"
           },
           {
             "name": "allowlist_root",
@@ -3167,7 +3180,7 @@
             }
           },
           {
-            "name": "free_mint_fee_lamports",
+            "name": "fee_lamports",
             "type": "u64"
           },
           {
@@ -3178,10 +3191,6 @@
                 4
               ]
             }
-          },
-          {
-            "name": "default_fee_bps",
-            "type": "u16"
           },
           {
             "name": "num",
@@ -3204,11 +3213,7 @@
             "type": "u8"
           },
           {
-            "name": "default_fee_bps",
-            "type": "u16"
-          },
-          {
-            "name": "free_mint_fee_lamports",
+            "name": "fee_lamports",
             "type": "u64"
           }
         ]
@@ -3224,12 +3229,12 @@
             "type": "pubkey"
           },
           {
-            "name": "old_fee_bps",
-            "type": "u16"
+            "name": "old_fee_lamports",
+            "type": "u64"
           },
           {
-            "name": "new_fee_bps",
-            "type": "u16"
+            "name": "new_fee_lamports",
+            "type": "u64"
           }
         ]
       }
