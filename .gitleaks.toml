@@ -83,100 +83,34 @@ id = "encryption-key"
 regex = '''(?i)(encryption)[_-]?key[=:]\s*([a-zA-Z0-9_-]{32,})'''
 keywords = ["encryption", "key"]
 
-# Allowlist for common false positives
+# Global allowlist.
+#
+# gitleaks' schema: `paths`, `regexes` and `commits` are plain string arrays on
+# one [allowlist] table. Repeating [allowlist.commits] as a table is a TOML
+# error ("table commits already exists") and stops gitleaks before it scans a
+# single commit. Allowlisting commits by *message* is not a gitleaks feature
+# either, and would have exempted any commit that mentioned "test" or "docs".
+#
+# Every path is anchored to a directory boundary or the end of the name. The
+# old unanchored words matched far more than intended: `build` matched
+# src/lib/authority/build-tx.ts, `temp` matched .env.production.template, and
+# `\.git` matched .github/. Real env files (.env.local, .env.staging, ...) are
+# deliberately NOT allowlisted: they are exactly what a secret scan is for.
 [allowlist]
 description = "Global Allowlist"
 paths = [
-    '''node_modules''',
-    '''package-lock\.json''',
-    '''yarn\.lock''',
-    '''\.git''',
-    '''\.vscode''',
-    '''\.idea''',
-    '''dist''',
-    '''build''',
-    '''coverage''',
-    '''\.next''',
-    '''\.nuxt''',
-    '''\.cache''',
-    '''tmp''',
-    '''temp''',
-    '''logs''',
-    '''test''',
-    '''tests''',
-    '''spec''',
-    '''specs''',
-    '''mock''',
-    '''mocks''',
-    '''fixture''',
-    '''fixtures''',
-    '''example''',
-    '''examples''',
-    '''sample''',
-    '''samples''',
-    '''demo''',
-    '''demos''',
-    '''sandbox''',
-    '''\.env\.example''',
-    '''\.env\.sample''',
-    '''\.env\.template''',
-    '''\.env\.local''',
-    '''\.env\.development''',
-    '''\.env\.test''',
-    '''\.env\.staging''',
-    '''README\.md''',
-    '''CHANGELOG\.md''',
-    '''CONTRIBUTING\.md''',
-    '''LICENSE''',
-    '''\.md$''',
-    '''\.txt$''',
-    '''\.log$''',
-    '''\.bak$''',
-    '''\.backup$''',
-    '''\.old$''',
-    '''\.orig$''',
-    '''\.tmp$''',
-    '''\.temp$'''
+    '''(^|/)node_modules/''',
+    '''(^|/)\.next/''',
+    '''(^|/)(dist|coverage|\.cache)/''',
+    '''(^|/)pnpm-lock\.yaml$''',
+    '''(^|/)package-lock\.json$''',
+    '''(^|/)yarn\.lock$''',
+    '''(^|/)\.env(\.[a-z]+)?\.(example|sample|template)$''',
 ]
-
-# Allowlist for specific regex patterns
-[[allowlist.regexes]]
-description = "Allow example/test keys"
-regex = '''(?i)(example|test|mock|sample|demo|sandbox|fake|dummy|placeholder)[_-]?(key|secret|token|password|private|seed|mnemonic)'''
-
-[[allowlist.regexes]]
-description = "Allow documented examples"
-regex = '''(?i)(your[_-]?)(key|secret|token|password|private|seed|mnemonic)[_-]?here'''
-
-[[allowlist.regexes]]
-description = "Allow commented out secrets"
-regex = '''^\s*#.*[a-zA-Z0-9_-]{32,}'''
-
-[[allowlist.regexes]]
-description = "Allow environment variable placeholders"
-regex = '''\$\{[A-Z_]+\}'''
-
-[[allowlist.regexes]]
-description = "Allow localhost/127.0.0.1 addresses"
-regex = '''(localhost|127\.0\.0\.1|0\.0\.0\.0|::1)'''
-
-[[allowlist.regexes]]
-description = "Allow test network configurations"
-regex = '''(?i)(testnet|devnet|goerli|mumbai|sepolia|arbitrum-goerli|optimism-goerli)'''
-
-[[allowlist.regexes]]
-description = "Allow documentation examples"
-regex = '''(?i)(example|sample|demo|test|mock|fake|dummy|placeholder)[_-]?(private|key|secret|token|seed|mnemonic)[=:]\s*([a-zA-Z0-9_-]{10,})'''
-
-# Allowlist for specific commits
-[allowlist.commits]
-description = "Allow test commits"
-message = '''(?i)(test|example|demo|sample|mock|fake|dummy|placeholder)'''
-
-[allowlist.commits]
-description = "Allow initial setup commits"
-message = '''(?i)(initial|setup|bootstrap|scaffold|template)'''
-
-[allowlist.commits]
-description = "Allow documentation commits"
-message = '''(?i)(docs|documentation|readme|changelog)'''
+# Matched against the extracted secret, not the whole line.
+regexes = [
+    # Placeholder values: example_key, your-secret-here, ${API_KEY}
+    '''(?i)(example|mock|sample|fake|dummy|placeholder)[_-]?(key|secret|token|password|private|seed|mnemonic)''',
+    '''(?i)your[_-]?(key|secret|token|password|private|seed|mnemonic)[_-]?here''',
+    '''^\$\{[A-Z_]+\}$''',
+]

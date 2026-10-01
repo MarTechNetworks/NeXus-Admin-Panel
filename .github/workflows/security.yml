@@ -10,35 +10,50 @@ on:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   # Container Security Scanning
   container-security:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # upload-sarif writes to the Security tab; the default token is read-only.
+      security-events: write
     steps:
-      - uses: actions/checkout@v3
-      
+      - uses: actions/checkout@v7
+
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
-        
+        uses: docker/setup-buildx-action@v4
+
       - name: Build Docker image
-        uses: docker/build-push-action@v4
+        uses: docker/build-push-action@v7
         with:
           context: .
           load: true
+          # Scan the image that ships. With no target, `docker build` builds the
+          # LAST stage, which is not necessarily the one deploy.yml pushes.
+          # Matches deploy.yml.
+          target: runner
           tags: admin:scan
           cache-from: type=gha
-          cache-to: type=gha,mode=max
-          
+          cache-to: type=gha,mode=min,timeout=5m
+
+      # Pinned to a commit, not a tag: trivy-action's tags were force-pushed to
+      # a credential-stealing payload in the March 2026 supply-chain attack, and
+      # @master follows whatever lands on the branch. v0.36.0.
       - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
         with:
           image-ref: admin:scan
           format: 'sarif'
           output: 'trivy-results.sarif'
           severity: 'CRITICAL,HIGH'
-          
+
       - name: Upload Trivy scan results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v2
+        if: always() && hashFiles('trivy-results.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: 'trivy-results.sarif'
 
@@ -46,13 +61,14 @@ jobs:
   code-security:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      
+      - uses: actions/checkout@v7
+
       # pnpm project: `npm ci` fails with no package-lock.json, and pnpm 11 needs Node 22.
-      - uses: pnpm/action-setup@v4
+      # v6.1 is the first action-setup release that supports pnpm 12.
+      - uses: pnpm/action-setup@v6
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: '22'
           cache: 'pnpm'
@@ -63,7 +79,7 @@ jobs:
       - name: Run dependency audit
         run: |
           pnpm audit --audit-level moderate --json > npm-audit.json || true
-          
+
       - name: Process npm audit results
         run: |
           if [ -f "npm-audit.json" ]; then
@@ -80,19 +96,19 @@ jobs:
   admin-security:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      
+      - uses: actions/checkout@v7
+
       - name: Check admin-specific security
         run: |
           echo "## Admin Panel Security Check" >> $GITHUB_STEP_SUMMARY
-          
+
           # Check for admin-specific vulnerabilities
           if grep -r "admin\|password\|secret" --include="*.tsx" --include="*.ts" --include="*.js" app/; then
             echo "⚠️ **Admin-specific patterns found - review manually**" >> $GITHUB_STEP_SUMMARY
           else
             echo "✅ No obvious admin security issues" >> $GITHUB_STEP_SUMMARY
           fi
-          
+
           # Check for exposed API keys
           if grep -r "API_KEY\|SECRET_KEY\|PRIVATE_KEY" --include="*.tsx" --include="*.ts" --include="*.js" app/; then
             echo "⚠️ **Potential API key patterns found**" >> $GITHUB_STEP_SUMMARY
@@ -104,52 +120,38 @@ jobs:
   secret-scan:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-          
+
+      # gitleaks-action takes no `with:` inputs -- it is configured through env.
+      # It fails the job itself when it finds a leak and writes its own job
+      # summary and SARIF artifact, so there is no report to post-process here.
+      # v2 ran on Node 20, which GitHub removed from hosted runners in Sep 2026.
       - name: Run Gitleaks
-        uses: gitleaks/gitleaks-action@v2
+        uses: gitleaks/gitleaks-action@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          config-path: .gitleaks.toml
-          report-path: gitleaks-report.json
-          report-format: json
-          
-      - name: Process Gitleaks results
-        run: |
-          if [ -f "gitleaks-report.json" ]; then
-            echo "## Secret Scan Results" >> $GITHUB_STEP_SUMMARY
-            secrets_found=$(cat gitleaks-report.json | jq length)
-            if [ $secrets_found -gt 0 ]; then
-              echo "⚠️ **$secrets_found potential secrets found!**" >> $GITHUB_STEP_SUMMARY
-              exit 1
-            else
-              echo "✅ No secrets found" >> $GITHUB_STEP_SUMMARY
-            fi
-          else
-            echo "✅ No secrets found" >> $GITHUB_STEP_SUMMARY
-          fi
+          GITLEAKS_CONFIG: .gitleaks.toml
 
   # License Compliance
   license-compliance:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      
+      - uses: actions/checkout@v7
+
       - name: Setup Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v7
         with:
           node-version: '22'
-          
+
       - name: Install license checker
         run: npm install -g license-checker
-        
+
       - name: Check licenses for Admin
         run: |
           license-checker --onlyAllow 'MIT;Apache-2.0;BSD-2-Clause;BSD-3-Clause;ISC;0BSD' --json admin-licenses.json || true
-          
+
       - name: Process license results
         run: |
           echo "## License Compliance Results for Admin" >> $GITHUB_STEP_SUMMARY
