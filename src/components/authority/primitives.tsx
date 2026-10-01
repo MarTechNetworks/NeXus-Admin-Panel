@@ -11,6 +11,7 @@
 import type { ReactNode } from 'react'
 import { AlertTriangle, Info, RotateCcw, ShieldAlert } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { shortAddress } from '@/lib/authority/format'
 
 // ── Section card ─────────────────────────────────────────────────────────────
 
@@ -263,6 +264,61 @@ export function PercentInput({
         %
       </span>
     </div>
+  )
+}
+
+// ── Read-only chain values ───────────────────────────────────────────────────
+//
+// The authority console stopped using these in the "Fees & minting" rebuild,
+// but the GuardianZ console still does — keep them here, not in either page.
+
+export function ChainValue({
+  label,
+  value,
+  mono,
+  tone,
+  title,
+}: {
+  label: string
+  value: ReactNode
+  mono?: boolean
+  tone?: 'default' | 'success' | 'warning' | 'danger'
+  title?: string
+}) {
+  const color =
+    tone === 'success'
+      ? 'var(--accent-success)'
+      : tone === 'warning'
+        ? 'var(--accent-warning)'
+        : tone === 'danger'
+          ? 'var(--accent-error)'
+          : 'var(--text-primary)'
+  return (
+    <div className="panel-subtle px-3 py-2.5">
+      <p className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
+        {label}
+      </p>
+      <p
+        className={cn('mt-1 text-sm font-medium', mono && 'font-mono text-xs')}
+        style={{ color }}
+        title={title}
+      >
+        {value}
+      </p>
+    </div>
+  )
+}
+
+export function AddressChip({ address, label }: { address: string; label?: string }) {
+  return (
+    <span
+      className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 font-mono text-[11px]"
+      style={{ background: 'var(--bg-tertiary)', color: 'var(--text-secondary)' }}
+      title={address}
+    >
+      {label && <span style={{ color: 'var(--text-muted)' }}>{label}</span>}
+      {shortAddress(address, 6, 6)}
+    </span>
   )
 }
 
