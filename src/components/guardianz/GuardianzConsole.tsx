@@ -23,6 +23,9 @@
  * After that the upload of the remaining items is ours (an ops-wallet script), and
  * the public mint page opens on its own when the chain shows every item loaded.
  *
+ * Separately, at any time: rewrite the royalty split (e.g. 7.5% across two wallets).
+ * Not a numbered step — the mint does not depend on it, and step 1 does not gate it.
+ *
  * Thawing the collection is deliberately not a step here — see admin-actions.ts.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -34,22 +37,42 @@ import {
   ExternalLink,
   KeyRound,
   Loader2,
+  Percent,
   Shield,
   Snowflake,
 } from 'lucide-react'
 
 import { Button } from '@/components/ui/Button'
 import { WalletButton } from '@/components/authority/WalletConnect'
-import { AddressChip, Callout, ChainValue, Section } from '@/components/authority/primitives'
+import {
+  AddressChip,
+  Callout,
+  ChainValue,
+  PercentInput,
+  Section,
+  TextInput,
+} from '@/components/authority/primitives'
 import { useWallet } from '@/lib/solana/wallet'
 import { shortAddress } from '@/lib/authority/format'
-import { CREATOR_WALLET, GUARDIANZ_COLLECTION, LMN_CONFIG_PDA } from '@/lib/guardianz/constants'
+import { CREATOR_WALLET, GUARDIANZ_COLLECTION, LMN_CONFIG_PDA, ROYALTY_BPS } from '@/lib/guardianz/constants'
 import { OPS_WALLET } from '@/lib/guardianz/candy-machine'
-import { createCandyMachine, reclaimUpdateDelegate } from '@/lib/guardianz/admin-actions'
+import {
+  createCandyMachine,
+  reclaimUpdateDelegate,
+  updateRoyaltySplit,
+  validateRoyaltySplit,
+  type RoyaltySplit,
+} from '@/lib/guardianz/admin-actions'
 import type { MigrationStatus } from '@/lib/guardianz/migration-status'
 import { walletUmi } from '@/lib/guardianz/umi'
 
-type StepId = 'reclaim' | 'create'
+type StepId = 'reclaim' | 'create' | 'royalties'
+
+const SIGNED_LABEL: Record<StepId, string> = {
+  reclaim: 'Reclaimed',
+  create: 'Candy machine created',
+  royalties: 'Royalty split updated',
+}
 
 interface SignedEntry {
   step: StepId
@@ -94,7 +117,7 @@ export function GuardianzConsole() {
         : null
 
   const run = useCallback(
-    async (id: StepId) => {
+    async (id: StepId, split?: RoyaltySplit) => {
       if (!isCreator || !wallet.publicKey) return
       setBusy(id)
       setError(null)
@@ -102,6 +125,10 @@ export function GuardianzConsole() {
         const umi = walletUmi(wallet)
         if (id === 'reclaim') {
           const { signature } = await reclaimUpdateDelegate(umi)
+          setSigned((l) => [...l, { step: id, signature }])
+        } else if (id === 'royalties') {
+          if (!split) return
+          const { signature } = await updateRoyaltySplit(umi, split)
           setSigned((l) => [...l, { step: id, signature }])
         } else {
           const { signature, candyMachine } = await createCandyMachine(umi, { itemsAvailable: remaining })
@@ -134,7 +161,7 @@ export function GuardianzConsole() {
               BlockChain GuardianZ — creator actions
             </h1>
             <p className="mt-1 max-w-2xl text-xs leading-relaxed" style={{ color: 'var(--text-tertiary)' }}>
-              Two signatures from the collection&apos;s update authority, on <strong>mainnet</strong>. Nothing here
+              Signatures from the collection&apos;s update authority, on <strong>mainnet</strong>. Nothing here
               sends SOL to anyone but a Metaplex program account you control, and every step is read back from the
               chain before it is shown as done.
             </p>
@@ -286,7 +313,7 @@ export function GuardianzConsole() {
             {signed.map((l, i) => (
               <li key={i} className="flex flex-wrap items-center gap-2">
                 <CheckCircle2 className="h-3.5 w-3.5" style={{ color: 'var(--accent-success)' }} />
-                {l.step === 'reclaim' ? 'Reclaimed' : 'Candy machine created'}
+                {SIGNED_LABEL[l.step]}
                 <a href={tx(l.signature)} target="_blank" rel="noreferrer" className="font-mono" style={{ color: 'var(--accent)' }}>
                   {shortAddress(l.signature, 6, 6)}
                 </a>
@@ -294,6 +321,27 @@ export function GuardianzConsole() {
               </li>
             ))}
           </ul>
+        )}
+      </Section>
+
+      {/* ── Royalties ───────────────────────────────────────────────────── */}
+      <Section
+        title="Royalties"
+        description="Secondary-sale royalty on the collection. Every GuardianZ NFT inherits it, so a change here applies to all minted ones and everything minted later. Independent of the steps above."
+        icon={<Percent className="h-5 w-5" />}
+      >
+        {!col ? (
+          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+            {status.isLoading ? 'Reading mainnet…' : 'Collection unreadable.'}
+          </p>
+        ) : (
+          <RoyaltySplitCard
+            currentBps={col.royaltyBps}
+            currentCreators={col.royaltyCreators}
+            busy={busy === 'royalties'}
+            disabled={!isCreator || busy !== null}
+            onSign={(split) => run('royalties', split)}
+          />
         )}
       </Section>
 
@@ -318,6 +366,127 @@ export function GuardianzConsole() {
           </Callout>
         </div>
       </Section>
+    </div>
+  )
+}
+
+type RoyaltyCreator = RoyaltySplit['creators'][number]
+
+const sameSplit = (bps: number | null, a: RoyaltyCreator[], b: RoyaltySplit) =>
+  bps === b.basisPoints &&
+  a.length === b.creators.length &&
+  a.every((c, i) => c.address === b.creators[i].address && c.percentage === b.creators[i].percentage)
+
+/**
+ * Two wallets and their shares of the royalty. The shares are tied together — editing
+ * one sets the other to the remainder — because Core rejects anything that is not
+ * exactly 100%, and a form that lets you type 60 + 50 only to fail in the wallet is
+ * worse than one that cannot.
+ */
+function RoyaltySplitCard({
+  currentBps,
+  currentCreators,
+  busy,
+  disabled,
+  onSign,
+}: {
+  currentBps: number | null
+  currentCreators: RoyaltyCreator[]
+  busy: boolean
+  disabled: boolean
+  onSign: (split: RoyaltySplit) => void
+}) {
+  const [bps, setBps] = useState(currentBps ?? ROYALTY_BPS)
+  const [rows, setRows] = useState<RoyaltyCreator[]>(() =>
+    currentCreators.length === 2
+      ? currentCreators
+      : [
+          { address: currentCreators[0]?.address ?? CREATOR_WALLET, percentage: 50 },
+          { address: '', percentage: 50 },
+        ],
+  )
+
+  const split: RoyaltySplit = {
+    basisPoints: bps,
+    creators: rows.map((r) => ({ address: r.address.trim(), percentage: r.percentage })),
+  }
+  let invalid: string | null = null
+  try {
+    validateRoyaltySplit(split)
+  } catch (e) {
+    invalid = e instanceof Error ? e.message : String(e)
+  }
+  const unchanged = sameSplit(currentBps, currentCreators, split)
+
+  const setAddress = (i: number, address: string) =>
+    setRows((r) => r.map((row, j) => (j === i ? { ...row, address } : row)))
+  const setShare = (i: number, pct: number) => {
+    const p = Math.min(99, Math.max(1, Math.round(pct)))
+    setRows((r) => r.map((row, j) => ({ ...row, percentage: j === i ? p : 100 - p })))
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="panel-subtle px-4 py-3 text-xs" style={{ color: 'var(--text-secondary)' }}>
+        <span style={{ color: 'var(--text-muted)' }}>On-chain now: </span>
+        {currentBps != null ? `${currentBps / 100}%` : 'no royalty'}
+        {currentCreators.map((c) => (
+          <span key={c.address} className="ml-2 font-mono" title={c.address}>
+            {shortAddress(c.address, 4, 4)} · {c.percentage}%
+          </span>
+        ))}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-3">
+        <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+          Total royalty
+        </span>
+        <PercentInput value={bps} onChange={setBps} max={10_000} disabled={disabled} />
+      </div>
+
+      <div className="space-y-2">
+        {rows.map((row, i) => (
+          <div key={i} className="flex flex-wrap items-center gap-3">
+            <span className="w-16 text-xs" style={{ color: 'var(--text-muted)' }}>
+              Wallet {i + 1}
+            </span>
+            <TextInput
+              value={row.address}
+              onChange={(v) => setAddress(i, v)}
+              placeholder="Solana address"
+              mono
+              disabled={disabled}
+              className="min-w-0 flex-1"
+            />
+            <PercentInput
+              value={row.percentage * 100}
+              onChange={(v) => setShare(i, v / 100)}
+              max={9_900}
+              disabled={disabled}
+            />
+          </div>
+        ))}
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-[11px]" style={{ color: invalid ? 'var(--accent-warning)' : 'var(--text-muted)' }}>
+          {invalid ??
+            (unchanged
+              ? 'This is already the on-chain split.'
+              : `Each sale pays ${(bps / 100).toString()}%: ${rows
+                  .map((r, i) => `${((bps * r.percentage) / 10_000).toFixed(3).replace(/\.?0+$/, '')}% to wallet ${i + 1}`)
+                  .join(', ')}. ~0.00001 SOL fee, plus a little rent if the account grows.`)}
+        </p>
+        <Button
+          variant="primary"
+          size="sm"
+          disabled={disabled || !!invalid || unchanged}
+          onClick={() => onSign(split)}
+          leftIcon={busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : undefined}
+        >
+          {busy ? 'Waiting for wallet…' : 'Sign'}
+        </Button>
+      </div>
     </div>
   )
 }

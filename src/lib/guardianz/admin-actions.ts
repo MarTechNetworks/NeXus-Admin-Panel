@@ -121,6 +121,61 @@ export async function createCandyMachine(
   return { signature: toBase58(signature), candyMachine: candyMachine.publicKey }
 }
 
+export interface RoyaltySplit {
+  /** Total royalty on secondary sales; 750 today. */
+  basisPoints: number
+  /** Whole percentages summing to 100 — Core stores each as a u8. */
+  creators: { address: string; percentage: number }[]
+}
+
+/** Throws with a human message if Core would reject the split, before the wallet opens. */
+export function validateRoyaltySplit(split: RoyaltySplit): void {
+  if (!Number.isInteger(split.basisPoints) || split.basisPoints < 0 || split.basisPoints > 10_000) {
+    throw new Error('Royalty must be between 0% and 100%, in whole basis points.')
+  }
+  if (split.creators.length === 0) throw new Error('At least one royalty wallet is required.')
+  const seen = new Set<string>()
+  for (const c of split.creators) {
+    try {
+      publicKey(c.address)
+    } catch {
+      throw new Error(`Not a valid Solana address: ${c.address || '(empty)'}`)
+    }
+    if (seen.has(c.address)) throw new Error('The same wallet is listed twice.')
+    seen.add(c.address)
+    if (!Number.isInteger(c.percentage) || c.percentage < 1) {
+      throw new Error('Each wallet needs a whole-number share of at least 1%.')
+    }
+  }
+  const total = split.creators.reduce((n, c) => n + c.percentage, 0)
+  if (total !== 100) throw new Error(`Shares must add up to 100% (they add up to ${total}%).`)
+}
+
+/**
+ * Rewrite the collection's Royalties plugin — e.g. split the 7.5% between two wallets.
+ *
+ * Every GuardianZ asset inherits royalties from the collection (none of the 1,361 has a
+ * Royalties plugin of its own, checked on mainnet 2026-10-03), so this one instruction
+ * changes the split on every existing NFT and on everything the candy machine mints
+ * later. The plugin's authority is `UpdateAuthority`, i.e. the creator — independent of
+ * the UpdateDelegate LaunchMyNFT holds, so it does not wait on step 1.
+ *
+ * `ruleSet` stays `None`, as it is today: no program allow/deny list on transfers.
+ */
+export async function updateRoyaltySplit(umi: Umi, split: RoyaltySplit): Promise<ActionResult> {
+  validateRoyaltySplit(split)
+  const { signature } = await updateCollectionPlugin(umi, {
+    collection: COLLECTION,
+    plugin: {
+      type: 'Royalties',
+      basisPoints: split.basisPoints,
+      creators: split.creators.map((c) => ({ address: publicKey(c.address), percentage: c.percentage })),
+      ruleSet: { type: 'None' },
+    },
+  }).sendAndConfirm(umi)
+  return { signature: toBase58(signature) }
+}
+
 /**
  * Fallback only — lift the transfer freeze without LaunchMyNFT.
  *

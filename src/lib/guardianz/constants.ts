@@ -92,7 +92,10 @@ export const ORIGINAL_PHASE = {
   priceLamports: ORIGINAL_PRICE_LAMPORTS,
 } as const
 
-/** Royalty enforced by the collection's Royalties plugin: 750 bps, 100% to the creator. */
+/**
+ * Royalty on the collection's Royalties plugin at handover: 750 bps, 100% to the creator.
+ * The creator can re-split it (`updateRoyaltySplit`), so who receives it is read live.
+ */
 export const ROYALTY_BPS = 750
 
 /**
