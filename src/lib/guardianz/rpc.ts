@@ -45,6 +45,11 @@ function poolIsMainnet(): Promise<boolean> {
  * on the first call and route every later one without blocking.
  */
 export const guardianzFetch: typeof fetch = async (input, init) => {
+  // Server-side, the direct endpoint is the better one and the pool would be a downgrade: the
+  // 403 is a reaction to an `origin` header, which only a browser sends, and the public node
+  // serves getProgramAccounts — which the browser-safe endpoints refuse. `readMigrationStatus`
+  // finds the candy machine with exactly that call, from app/api/guardianz/status.
+  if (typeof window === 'undefined') return fetch(input, init)
   if (!PINNED && (await poolIsMainnet())) return rpcPoolFetch(input, init)
   return fetch(input, init)
 }
