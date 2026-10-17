@@ -41,8 +41,12 @@
     -moz-osx-font-smoothing: grayscale;
     background: var(--bg-primary);
     color: var(--text-primary);
-    max-width: 100vw;
-    overflow-x: hidden;
+    /* `clip`, not `hidden`: `hidden` on <html> makes the root element a scroll
+       container, which gives up the viewport's fast scrolling path. `clip` keeps
+       overflow-y `visible`, so it does not. `max-width: 100vw` is gone because
+       100vw counts the scrollbar — on Windows it *was* the horizontal overflow
+       this rule then had to clip. */
+    overflow-x: clip;
   }
 
   body {
@@ -84,7 +88,10 @@
 }
 
 @utility btn-base {
-  @apply inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition-all duration-200 focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50;
+  /* `transition`, not `transition-all`: `all` also animates layout properties,
+     so any width/padding change on a button drags the layout engine through
+     every frame of it. */
+  @apply inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition duration-200 focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50;
   min-height: 2.25rem;
 }
 
@@ -157,13 +164,16 @@
     box-shadow: 0 0 0 1px var(--accent), 0 0 0 4px rgba(56, 189, 248, 0.1);
   }
 
+  /* No backdrop-filter here. `.card` has ~55 call sites and a page renders
+     dozens of them at once; each one would be its own backdrop root that the
+     compositor re-samples and re-blurs every scrolled frame. At --surface's
+     0.92 alpha the blur was invisible anyway, so the cost bought nothing. */
   .card {
     @apply rounded-xl shadow-card;
     background:
       linear-gradient(180deg, rgba(255, 255, 255, 0.035), transparent 42%),
       var(--surface);
     border: 1px solid var(--border-primary);
-    backdrop-filter: blur(18px) saturate(145%);
   }
 
   .panel-subtle {
@@ -211,16 +221,16 @@
   }
 }
 
+/* One drop-shadow per keyframe, not two and three. `filter` animation repaints
+   the element on every frame forever, and each stacked drop-shadow is its own
+   blur pass — so the old peak cost 3x this one, permanently, on every page. */
 @keyframes logoPulse {
   0%, 100% {
-    filter: drop-shadow(0 0 6px rgba(56, 189, 248, 0.35))
-            drop-shadow(0 0 14px rgba(56, 189, 248, 0.14));
+    filter: drop-shadow(0 0 8px rgba(56, 189, 248, 0.35));
   }
 
   50% {
-    filter: drop-shadow(0 0 12px rgba(56, 189, 248, 0.72))
-            drop-shadow(0 0 28px rgba(56, 189, 248, 0.28))
-            drop-shadow(0 0 46px rgba(139, 92, 246, 0.24));
+    filter: drop-shadow(0 0 18px rgba(56, 189, 248, 0.7));
   }
 }
 

@@ -53,12 +53,14 @@ export function Header({
           opacity: 0.7,
         }}
       />
+      {/* Opaque, not frosted. A sticky bar is the one element whose backdrop
+          genuinely changes on every scrolled frame, so blurring it cost a
+          full-width blur pass per frame for the whole session. Over a
+          near-black page the old 0.78 translucency read as near-opaque. */}
       <div
         className="flex h-16 shrink-0 items-center justify-between gap-2 px-4 md:gap-4 md:px-6"
         style={{
-          background: 'rgba(8, 9, 13, 0.78)',
-          backdropFilter: 'blur(20px) saturate(180%)',
-          WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+          background: 'var(--bg-primary)',
           borderBottom: '1px solid var(--border-primary)',
         }}
       >

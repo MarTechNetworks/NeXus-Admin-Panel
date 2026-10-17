@@ -62,16 +62,23 @@ export function Sidebar() {
 
   return (
     <>
-      {/* Backdrop — mobile only, behind the drawer */}
+      {/* Backdrop — mobile only, behind the drawer. The blur is applied only
+          while open: this element stays mounted, and a backdrop-filter at
+          opacity 0 still keeps a full-viewport backdrop layer alive, so it
+          taxed every scroll on mobile for an effect nobody could see. */}
       <div
         className={cn(
-          'fixed inset-0 z-40 bg-black/60 backdrop-blur-sm transition-opacity duration-200 md:hidden',
-          mobileOpen ? 'opacity-100' : 'pointer-events-none opacity-0'
+          'fixed inset-0 z-40 bg-black/60 transition-opacity duration-200 md:hidden',
+          mobileOpen ? 'opacity-100 backdrop-blur-sm' : 'pointer-events-none opacity-0'
         )}
         onClick={() => setMobileOpen(false)}
         aria-hidden="true"
       />
 
+    {/* No backdrop-filter on the rail: nothing scrolls behind a fixed
+        full-height sidebar (the main column is margin-offset past it), so the
+        blur only ever re-blurred a static gradient — full viewport height,
+        every frame. */}
     <aside
       className={cn(
         'fixed left-0 top-0 z-50 flex h-screen flex-col transition-[transform,width] duration-200',
@@ -81,7 +88,10 @@ export function Sidebar() {
         mobileOpen ? 'translate-x-0' : '-translate-x-full',
         'md:translate-x-0'
       )}
-      style={{ background: 'rgba(15, 17, 24, 0.9)', borderRight: '1px solid var(--border-primary)', backdropFilter: 'blur(18px)' }}
+      // No backdrop-filter: nothing scrolls behind a fixed full-height rail
+      // (the main column is margin-offset past it), so the blur only ever
+      // re-blurred a static gradient — at full viewport height, every frame.
+      style={{ background: 'rgba(15, 17, 24, 0.9)', borderRight: '1px solid var(--border-primary)' }}
       aria-label="Primary navigation"
     >
       {/* Logo row */}
