@@ -46,6 +46,7 @@ import {
   Trash2,
   Upload,
   Users,
+  Wand2,
 } from 'lucide-react'
 
 import { Button } from '@/components/ui/Button'
@@ -56,13 +57,14 @@ import { walletUmi } from '@/lib/guardianz/umi'
 import {
   DESCRIPTION_MAX,
   DISPLAY_NAME_MAX,
-  LABEL_MAX_BYTES,
   emptyPhase,
+  extractWallets,
   merkleRootHex,
   parseWallets,
   phasesFromChain,
   savePhases,
   validatePhases,
+  withDerivedLabels,
   type GuardGroupSummary,
   type PhaseDraft,
 } from '@/lib/guardianz/guard-groups'
@@ -137,10 +139,6 @@ function fingerprint(drafts: PhaseDraft[]): string {
   )
 }
 
-function bytesOf(s: string): number {
-  return new TextEncoder().encode(s).length
-}
-
 function CopyButton({ value, title }: { value: string; title?: string }) {
   const [done, setDone] = useState(false)
   return (
@@ -159,6 +157,85 @@ function CopyButton({ value, title }: { value: string; title?: string }) {
       {done ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
       {done ? 'Copied' : 'Copy'}
     </button>
+  )
+}
+
+/**
+ * A datetime field whose whole surface opens the calendar.
+ *
+ * `<input type="datetime-local">` only opens its picker from the little icon at the far
+ * right — clicking the text puts a caret in the month segment, which reads as a broken
+ * control. `showPicker()` is the supported way to ask for it, so clicking or focusing
+ * anywhere opens the calendar while typing still works for anyone who prefers the keyboard.
+ *
+ * It throws when the browser has no picker, or when called without a user gesture; both
+ * are fine and leave a perfectly usable text field, so the throw is swallowed.
+ */
+function DateTimeInput({
+  id,
+  value,
+  onChange,
+}: {
+  id?: string
+  value: string
+  onChange: (v: string) => void
+}) {
+  const open = (el: HTMLInputElement) => {
+    try {
+      el.showPicker()
+    } catch {
+      /* no picker here — the field still types */
+    }
+  }
+
+  return (
+    <input
+      id={id}
+      type="datetime-local"
+      className="input-base w-full cursor-pointer text-xs"
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      onClick={(e) => open(e.currentTarget)}
+      onFocus={(e) => open(e.currentTarget)}
+      onKeyDown={(e) => {
+        // Space and Enter are how a keyboard user asks a control to open.
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          open(e.currentTarget)
+        }
+      }}
+    />
+  )
+}
+
+/**
+ * The two starts people actually pick: now, or the top of the next hour.
+ *
+ * Offered only while the field is empty, because the common case for a phase being added
+ * mid-launch is "open it now" and typing a full datetime for that is absurd.
+ */
+function QuickDateButtons({ onPick }: { onPick: (value: string) => void }) {
+  const fmt = (d: Date) => {
+    const pad = (n: number) => String(n).padStart(2, '0')
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+  }
+  const nextHour = () => {
+    const d = new Date()
+    d.setMinutes(0, 0, 0)
+    d.setHours(d.getHours() + 1)
+    return d
+  }
+
+  return (
+    <span className="flex items-center gap-1.5 text-[10px]" style={{ color: 'var(--accent)' }}>
+      <button type="button" onClick={() => onPick(fmt(new Date()))}>
+        Now
+      </button>
+      <span style={{ color: 'var(--text-muted)' }}>·</span>
+      <button type="button" onClick={() => onPick(fmt(nextHour()))}>
+        Next hour
+      </button>
+    </span>
   )
 }
 
@@ -213,6 +290,8 @@ function WhitelistField({
 }) {
   const fileRef = useRef<HTMLInputElement>(null)
   const [fileError, setFileError] = useState<string | null>(null)
+  const [lastImport, setLastImport] = useState<string | null>(null)
+  const [dragging, setDragging] = useState(false)
   const parsed = useMemo(() => parseWallets(draft.allowlistRaw), [draft.allowlistRaw])
   const root = useMemo(
     () => (parsed.wallets.length > 0 ? merkleRootHex(parsed.wallets) : ''),
@@ -220,15 +299,58 @@ function WhitelistField({
   )
   const isAllowlist = draft.allowlistRaw.trim().length > 0 || !!draft.unknownRootHex
 
-  const readFile = async (file: File) => {
+  /**
+   * Take a file and leave the field holding a clean, editable list.
+   *
+   * Addresses are extracted (CSV columns, JSON objects, plain text — see
+   * `extractWallets`), merged with whatever is already in the field, de-duplicated, and
+   * written back one per line. The result is still a textarea someone can edit by hand;
+   * importing a file is a way to fill it, not a different mode.
+   *
+   * Duplicates are removed rather than reported, because a list assembled from two
+   * snapshots overlapping is the normal case and "47 duplicates" is not a problem anyone
+   * wants to go and fix by hand. What was cleaned is summarised once, under the field.
+   */
+  const importFiles = async (files: File[]) => {
     setFileError(null)
     try {
-      const text = await file.text()
-      const existing = draft.allowlistRaw.trim()
-      onChange({ allowlistRaw: existing ? `${existing}\n${text}` : text, unknownRootHex: undefined })
+      const chunks: string[] = []
+      for (const file of files) chunks.push(await file.text())
+
+      const before = parsed.wallets.length
+      const merged = extractWallets([draft.allowlistRaw, ...chunks].filter(Boolean).join('\n'))
+
+      if (merged.wallets.length === 0) {
+        setFileError(
+          `No Solana addresses found in ${files.map((f) => f.name).join(', ')}. A column of base58 addresses is all it needs — CSV, JSON or a plain list.`,
+        )
+        return
+      }
+
+      onChange({ allowlistRaw: merged.wallets.join('\n'), unknownRootHex: undefined })
+
+      const added = merged.wallets.length - before
+      const notes = [
+        `${files.length === 1 ? files[0].name : `${files.length} files`}: +${added.toLocaleString()} new`,
+        merged.duplicates > 0 ? `${merged.duplicates.toLocaleString()} duplicate${merged.duplicates === 1 ? '' : 's'} removed` : null,
+        merged.invalid.length > 0 ? `${merged.invalid.length.toLocaleString()} line${merged.invalid.length === 1 ? '' : 's'} skipped (not an address)` : null,
+      ].filter(Boolean)
+      setLastImport(notes.join(' · '))
     } catch (e) {
       setFileError(e instanceof Error ? e.message : 'Could not read that file.')
     }
+  }
+
+  /** Rewrite the field as its own clean list: unique, one per line, nothing else dropped. */
+  const tidy = () => {
+    setFileError(null)
+    const removed = parsed.duplicates
+    onChange({ allowlistRaw: parsed.wallets.join('\n') })
+    setLastImport(
+      removed > 0
+        ? `${removed.toLocaleString()} duplicate${removed === 1 ? '' : 's'} removed`
+        : 'List is already clean',
+    )
   }
 
   return (
@@ -276,14 +398,44 @@ function WhitelistField({
         </div>
       )}
 
-      <div className="mt-3">
+      {/* Drop target wraps the textarea itself: dragging a snapshot export onto the list
+          is the gesture people try first, and a separate dropzone would be a second place
+          to put the same thing. */}
+      <div
+        className="relative mt-3"
+        onDragOver={(e) => {
+          e.preventDefault()
+          setDragging(true)
+        }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={(e) => {
+          e.preventDefault()
+          setDragging(false)
+          const files = Array.from(e.dataTransfer.files ?? [])
+          if (files.length > 0) void importFiles(files)
+        }}
+      >
         <TextArea
           value={draft.allowlistRaw}
           onChange={(v) => onChange({ allowlistRaw: v, unknownRootHex: v.trim() ? undefined : draft.unknownRootHex })}
-          placeholder={'One wallet per line. Commas, semicolons, tabs and spaces also work.\n\n7xKX…\n9aBc…'}
+          placeholder={
+            'Paste addresses, or drop a CSV / JSON export here.\n\nOne per line — commas, semicolons and tabs work too.\n7xKX…\n9aBc…'
+          }
           rows={6}
           mono
         />
+        {dragging && (
+          <div
+            className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-lg text-xs font-semibold"
+            style={{
+              border: '2px dashed var(--accent)',
+              background: 'color-mix(in srgb, var(--accent) 12%, transparent)',
+              color: 'var(--accent)',
+            }}
+          >
+            Drop to add these wallets
+          </div>
+        )}
       </div>
 
       <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px]">
@@ -291,14 +443,35 @@ function WhitelistField({
           <Users className="mr-1 inline h-3 w-3" />
           {parsed.wallets.length.toLocaleString()} wallet{parsed.wallets.length === 1 ? '' : 's'}
         </span>
+        {/* Typed or pasted duplicates are offered for removal rather than removed as you
+            type — rewriting a textarea under someone's cursor is hostile. An import does
+            clean itself, because nobody is mid-sentence in a dropped file. */}
         {parsed.duplicates > 0 && (
-          <span style={{ color: 'var(--text-muted)' }}>{parsed.duplicates} duplicate(s) dropped</span>
+          <button
+            type="button"
+            onClick={tidy}
+            className="inline-flex items-center gap-1 rounded px-1.5 py-0.5"
+            style={{ color: 'var(--accent)' }}
+            title="Rewrite the list without the repeats"
+          >
+            <Wand2 className="h-3 w-3" />
+            Remove {parsed.duplicates.toLocaleString()} duplicate{parsed.duplicates === 1 ? '' : 's'}
+          </button>
         )}
         {parsed.invalid.length > 0 && (
-          <span style={{ color: 'var(--accent-error)' }}>
-            <AlertTriangle className="mr-1 inline h-3 w-3" />
-            {parsed.invalid.length} not an address (line {parsed.invalid[0].line})
-          </span>
+          <button
+            type="button"
+            onClick={() => {
+              onChange({ allowlistRaw: parsed.wallets.join('\n') })
+              setLastImport(`${parsed.invalid.length.toLocaleString()} line(s) that were not addresses removed`)
+            }}
+            className="inline-flex items-center gap-1 rounded px-1.5 py-0.5"
+            style={{ color: 'var(--accent-error)' }}
+            title={`Line ${parsed.invalid[0].line}: "${parsed.invalid[0].value.slice(0, 24)}"`}
+          >
+            <AlertTriangle className="h-3 w-3" />
+            Remove {parsed.invalid.length} bad line{parsed.invalid.length === 1 ? '' : 's'}
+          </button>
         )}
         {root && (
           <span className="inline-flex items-center gap-1.5 font-mono" style={{ color: 'var(--text-muted)' }}>
@@ -312,12 +485,15 @@ function WhitelistField({
           className="inline-flex items-center gap-1 rounded px-1.5 py-0.5"
           style={{ color: 'var(--accent)' }}
         >
-          <Upload className="h-3 w-3" /> Load from file
+          <Upload className="h-3 w-3" /> Import CSV / JSON
         </button>
         {draft.allowlistRaw.trim() && (
           <button
             type="button"
-            onClick={() => onChange({ allowlistRaw: '' })}
+            onClick={() => {
+              onChange({ allowlistRaw: '' })
+              setLastImport(null)
+            }}
             className="inline-flex items-center gap-1 rounded px-1.5 py-0.5"
             style={{ color: 'var(--text-tertiary)' }}
           >
@@ -325,6 +501,13 @@ function WhitelistField({
           </button>
         )}
       </div>
+
+      {lastImport && !fileError && (
+        <p className="mt-2 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+          <Check className="mr-1 inline h-3 w-3" />
+          {lastImport}
+        </p>
+      )}
 
       {fileError && (
         <p className="mt-2 text-[11px]" style={{ color: 'var(--accent-error)' }}>
@@ -335,11 +518,12 @@ function WhitelistField({
       <input
         ref={fileRef}
         type="file"
-        accept=".txt,.csv,.json,text/plain,text/csv,application/json"
+        multiple
+        accept=".txt,.csv,.tsv,.json,text/plain,text/csv,application/json"
         className="hidden"
         onChange={(e) => {
-          const file = e.target.files?.[0]
-          if (file) void readFile(file)
+          const files = Array.from(e.target.files ?? [])
+          if (files.length > 0) void importFiles(files)
           e.target.value = ''
         }}
       />
@@ -367,7 +551,6 @@ function PhaseCard({
   onMove: (by: -1 | 1) => void
 }) {
   const state = windowOf(draft)
-  const labelBytes = bytesOf(draft.label.trim())
   const price = Number(draft.priceSol)
   const isFree = !draft.priceSol.trim() || price === 0
 
@@ -453,43 +636,30 @@ function PhaseCard({
       </div>
 
       <div className="space-y-2.5 p-4">
-        <div className="grid gap-2.5 sm:grid-cols-2">
-          <Field
-            label="On-chain name"
-            htmlFor={`label-${draft.key}`}
-            hint={`What the buyer's transaction names. ${LABEL_MAX_BYTES} bytes max — ${labelBytes}/${LABEL_MAX_BYTES} used.`}
-            trailing={
-              <span
-                className="text-[10px] font-mono"
-                style={{ color: labelBytes > LABEL_MAX_BYTES ? 'var(--accent-error)' : 'var(--text-muted)' }}
-              >
-                {labelBytes}/{LABEL_MAX_BYTES}
-              </span>
-            }
-          >
-            <TextInput
-              id={`label-${draft.key}`}
-              value={draft.label}
-              onChange={(v) => onChange({ label: v })}
-              placeholder="DawG"
-              mono
-              invalid={labelBytes > LABEL_MAX_BYTES}
-            />
-          </Field>
-
-          <Field
-            label="Name buyers see"
-            htmlFor={`display-${draft.key}`}
-            hint="Shown on the mint page's phase tab. Blank falls back to the on-chain name."
-          >
-            <TextInput
-              id={`display-${draft.key}`}
-              value={draft.displayName}
-              onChange={(v) => onChange({ displayName: v.slice(0, DISPLAY_NAME_MAX) })}
-              placeholder="DawG Pound"
-            />
-          </Field>
-        </div>
+        <Field
+          label="Phase name"
+          htmlFor={`display-${draft.key}`}
+          hint={
+            <>
+              Shown on the mint page&apos;s phase tab.
+              {draft.label && (
+                <>
+                  {' '}
+                  On chain it is stored as <span className="font-mono">{draft.label}</span> — the program
+                  allows six bytes, so it is shortened automatically
+                  {draft.labelLocked ? ' and, for a phase that is already live, never changed' : ''}.
+                </>
+              )}
+            </>
+          }
+        >
+          <TextInput
+            id={`display-${draft.key}`}
+            value={draft.displayName}
+            onChange={(v) => onChange({ displayName: v.slice(0, DISPLAY_NAME_MAX) })}
+            placeholder="DawG Pound"
+          />
+        </Field>
 
         <Field
           label="Description"
@@ -510,26 +680,48 @@ function PhaseCard({
             label="Starts"
             htmlFor={`start-${draft.key}`}
             hint="Your local time. Blank = open from the moment it is saved."
+            trailing={
+              draft.startsAt ? (
+                <button
+                  type="button"
+                  onClick={() => onChange({ startsAt: '' })}
+                  className="text-[10px]"
+                  style={{ color: 'var(--text-tertiary)' }}
+                >
+                  Clear
+                </button>
+              ) : (
+                <QuickDateButtons onPick={(v) => onChange({ startsAt: v })} />
+              )
+            }
           >
-            <input
+            <DateTimeInput
               id={`start-${draft.key}`}
-              type="datetime-local"
-              className="input-base w-full text-xs"
               value={draft.startsAt}
-              onChange={(e) => onChange({ startsAt: e.target.value })}
+              onChange={(v) => onChange({ startsAt: v })}
             />
           </Field>
           <Field
             label="Ends"
             htmlFor={`end-${draft.key}`}
             hint="Blank = open-ended. It does NOT close when the next phase opens — phases run concurrently."
+            trailing={
+              draft.endsAt ? (
+                <button
+                  type="button"
+                  onClick={() => onChange({ endsAt: '' })}
+                  className="text-[10px]"
+                  style={{ color: 'var(--text-tertiary)' }}
+                >
+                  Clear
+                </button>
+              ) : null
+            }
           >
-            <input
+            <DateTimeInput
               id={`end-${draft.key}`}
-              type="datetime-local"
-              className="input-base w-full text-xs"
               value={draft.endsAt}
-              onChange={(e) => onChange({ endsAt: e.target.value })}
+              onChange={(v) => onChange({ endsAt: v })}
             />
           </Field>
         </div>
@@ -621,7 +813,10 @@ export function PhaseEditor({
       if (stored) {
         const parsed = JSON.parse(stored) as PhaseDraft[]
         if (Array.isArray(parsed) && parsed.length > 0) {
-          setDrafts(parsed)
+          // Through the same derivation as an edit, so a draft written before labels were
+          // generated — or one whose name was changed and never saved — starts consistent
+          // instead of showing one label and writing another.
+          setDrafts(withDerivedLabels(parsed))
           return
         }
       }
@@ -656,10 +851,29 @@ export function PhaseEditor({
   const dirty = drafts !== null && fingerprint(list) !== fingerprint(fromChain)
   const isSigner = !!wallet.address && !!guardAuthority && wallet.address === guardAuthority
 
-  const patch = useCallback((index: number, p: Partial<PhaseDraft>) => {
-    setDrafts((prev) => (prev ?? []).map((d, i) => (i === index ? { ...d, ...p } : d)))
-    setSaved(null)
-  }, [])
+  /**
+   * Every edit goes through here, and every edit re-derives the six-byte labels.
+   *
+   * Keeping it in one place is what lets the label be a generated field rather than a
+   * typed one: rename a phase, add one, remove one, and the labels in state are always
+   * the labels that would be written — so validation, the uniqueness check and the hint
+   * under the name field are reading the same strings the transaction will carry.
+   * Phases already on chain keep theirs (`labelLocked`).
+   */
+  const updateDrafts = useCallback(
+    (next: (prev: PhaseDraft[]) => PhaseDraft[]) => {
+      setDrafts((prev) => withDerivedLabels(next(prev ?? [])))
+      setSaved(null)
+    },
+    [],
+  )
+
+  const patch = useCallback(
+    (index: number, p: Partial<PhaseDraft>) => {
+      updateDrafts((prev) => prev.map((d, i) => (i === index ? { ...d, ...p } : d)))
+    },
+    [updateDrafts],
+  )
 
   const move = useCallback((index: number, by: -1 | 1) => {
     setDrafts((prev) => {
@@ -841,10 +1055,7 @@ export function PhaseEditor({
                 total={list.length}
                 problems={problemsByIndex.get(i) ?? []}
                 onChange={(p) => patch(i, p)}
-                onRemove={() => {
-                  setDrafts((prev) => (prev ?? []).filter((_, idx) => idx !== i))
-                  setSaved(null)
-                }}
+                onRemove={() => updateDrafts((prev) => prev.filter((_, idx) => idx !== i))}
                 onMove={(by) => move(i, by)}
               />
             ))}
@@ -856,8 +1067,7 @@ export function PhaseEditor({
               size="sm"
               leftIcon={<Plus className="h-3.5 w-3.5" />}
               onClick={() => {
-                setDrafts((prev) => [...(prev ?? []), emptyPhase()])
-                setSaved(null)
+                updateDrafts((prev) => [...prev, emptyPhase()])
               }}
             >
               Add phase

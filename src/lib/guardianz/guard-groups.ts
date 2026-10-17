@@ -106,6 +106,16 @@ export interface PhaseDraft {
    * until the list is re-pasted, because proofs are built from the list.
    */
   unknownRootHex?: string
+  /**
+   * True when `label` was read off the chain, so it must not be re-derived.
+   *
+   * A label is a phase's on-chain identity: renaming one rewrites the group a buyer's
+   * transaction names, and anyone sitting on an open mint page would send the old name
+   * into a guard that no longer has it. Editing the display name of a live phase
+   * therefore changes the copy only. New phases have no such constraint, which is why
+   * their label is generated and never typed.
+   */
+  labelLocked?: boolean
 }
 
 export const emptyPhase = (): PhaseDraft => ({
@@ -119,6 +129,63 @@ export const emptyPhase = (): PhaseDraft => ({
   maxPerWallet: '',
   allowlistRaw: '',
 })
+
+// ── Labels ────────────────────────────────────────────────────────────────────────
+
+/**
+ * Turn the name a buyer reads into the six bytes the program stores.
+ *
+ * Nobody should have to invent a six-byte identifier. "DawG Pound — holders" becomes
+ * `DawGPo`, and the person editing the phase never sees the difference unless they look.
+ *
+ * ASCII only, deliberately: a byte budget is impossible to reason about when é costs two
+ * and 🐕 costs four, and a label is machine-facing anyway. Non-ASCII is transliterated
+ * where that is obvious (é → e) and otherwise dropped, so an all-emoji name still yields
+ * something rather than an empty label.
+ *
+ * `taken` is every label already in use in the same save; a collision gets a numeric
+ * suffix inside the budget (`DawGPo` → `DawGP2`), because two groups with one label is a
+ * transaction the program rejects.
+ */
+export function deriveLabel(displayName: string, taken: Iterable<string> = []): string {
+  const used = new Set(Array.from(taken, (t) => t.toLowerCase()))
+
+  const ascii = displayName
+    .normalize('NFKD')
+    // Strip combining marks left by NFKD, so "é" is "e" rather than "e" + an accent byte.
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/[^A-Za-z0-9]/g, '')
+
+  const base = (ascii || 'Phase').slice(0, LABEL_MAX_BYTES)
+  if (!used.has(base.toLowerCase())) return base
+
+  for (let n = 2; n < 1000; n++) {
+    const suffix = String(n)
+    const candidate = base.slice(0, Math.max(1, LABEL_MAX_BYTES - suffix.length)) + suffix
+    if (!used.has(candidate.toLowerCase())) return candidate
+  }
+  // 998 phases sharing a name is not a real situation; the program caps the set long
+  // before this, and returning the base lets validation report the collision plainly.
+  return base
+}
+
+/**
+ * Give every unlocked draft a label derived from its display name.
+ *
+ * Run on every edit rather than at save time, so the labels in hand are always the ones
+ * that would be written — validation, the uniqueness check and the mint page's tabs all
+ * read the same strings.
+ */
+export function withDerivedLabels(drafts: PhaseDraft[]): PhaseDraft[] {
+  const taken: string[] = drafts.filter((d) => d.labelLocked && d.label.trim()).map((d) => d.label.trim())
+
+  return drafts.map((draft) => {
+    if (draft.labelLocked && draft.label.trim()) return draft
+    const label = deriveLabel(draft.displayName, taken)
+    taken.push(label)
+    return draft.label === label ? draft : { ...draft, label }
+  })
+}
 
 // ── Wallet lists ──────────────────────────────────────────────────────────────────
 
@@ -168,6 +235,65 @@ export function parseWallets(raw: string): ParsedWallets {
   return { wallets, invalid, duplicates }
 }
 
+/**
+ * Pull wallet addresses out of whatever file someone dropped on the field.
+ *
+ * Snapshot tools export three shapes and a person should not have to care which they got:
+ *
+ *   - **JSON** — an array of addresses, an array of objects (`owner`, `wallet`, `address`,
+ *     `publicKey`, `pubkey`…), or an object wrapping either under `wallets`/`holders`/
+ *     `addresses`/`data`. Nested objects are walked, so a Helius or Tensor dump works
+ *     without reshaping.
+ *   - **CSV/TSV** — any delimiter; the header row is skipped by virtue of not being
+ *     base58, and extra columns (amount, rank, mint) are ignored rather than mis-read.
+ *   - **anything else** — treated as text and scanned the same way.
+ *
+ * In every case the rule is the same and deliberately dumb: **take every base58 token that
+ * looks like an address, in order, and ignore everything else.** A parser that tried to
+ * identify "the address column" would guess wrong on the one export that matters.
+ *
+ * Returns the parse so the caller can report what was dropped — duplicates are removed
+ * here, not merely counted.
+ */
+export function extractWallets(text: string): ParsedWallets {
+  const trimmed = text.trim()
+
+  if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+    try {
+      const strings: string[] = []
+      const walk = (node: unknown, depth: number): void => {
+        if (depth > 8) return
+        if (typeof node === 'string') strings.push(node)
+        else if (Array.isArray(node)) node.forEach((n) => walk(n, depth + 1))
+        else if (node && typeof node === 'object') {
+          for (const value of Object.values(node as Record<string, unknown>)) walk(value, depth + 1)
+        }
+      }
+      walk(JSON.parse(trimmed), 0)
+      // One per line, then through the same parser as a paste, so JSON and CSV cannot
+      // disagree about validation, ordering or de-duplication.
+      return parseWallets(strings.join('\n'))
+    } catch {
+      /**
+       * Malformed JSON — a half-copied export, a truncated download — is salvaged rather
+       * than rejected, by pulling every base58 run out of the raw text.
+       *
+       * The strict token scan below cannot do it: in `{"owner":"7xKX…"}` the braces and
+       * quotes are not separators, so the whole thing is one token and matches nothing.
+       * A regex over the text ignores the punctuation entirely.
+       *
+       * Only broken JSON takes this path, because it trades away the "line 4 is not an
+       * address" report that typed input needs: here there are no lines to point at and
+       * the alternative is finding nothing at all.
+       */
+      const runs = trimmed.match(/[1-9A-HJ-NP-Za-km-z]{32,44}/g) ?? []
+      if (runs.length > 0) return parseWallets(runs.join('\n'))
+    }
+  }
+
+  return parseWallets(trimmed)
+}
+
 /** The merkle root the `allowList` guard will carry, as hex for display. */
 export function merkleRootHex(wallets: string[]): string {
   if (wallets.length === 0) return ''
@@ -199,19 +325,29 @@ export function validatePhases(drafts: PhaseDraft[]): PhaseProblem[] {
   drafts.forEach((d, i) => {
     const label = d.label.trim()
 
+    // The label is generated from the name (`withDerivedLabels`), so an empty one means
+    // an empty name — which is what the person can actually act on.
+    if (!d.displayName.trim()) {
+      problems.push({ index: i, message: 'Needs a name — buyers pick a phase by it.' })
+    }
+
     if (!label) {
-      problems.push({ index: i, message: 'Needs a short on-chain name — buyers select a phase by this.' })
+      if (d.displayName.trim()) {
+        problems.push({ index: i, message: 'Could not build an on-chain name from this name. Use some letters or digits in it.' })
+      }
     } else {
       const bytes = new TextEncoder().encode(label).length
       if (bytes > LABEL_MAX_BYTES) {
+        // Only reachable for a label read off the chain — derived ones are ASCII and cut
+        // to the budget — so the advice is to rename the phase, not to retype the label.
         problems.push({
           index: i,
-          message: `"${label}" is ${bytes} bytes; the program allows ${LABEL_MAX_BYTES}. Shorten it (emoji and accents cost several bytes each) and put the full name in the display name.`,
+          message: `Its on-chain name "${label}" is ${bytes} bytes; the program allows ${LABEL_MAX_BYTES}. This phase was created elsewhere — remove it and add it again to get a valid one.`,
         })
       }
       const first = labels.get(label.toLowerCase())
       if (first !== undefined) {
-        problems.push({ index: i, message: `Same on-chain name as phase ${first + 1}. They must be unique.` })
+        problems.push({ index: i, message: `Ends up with the same on-chain name as phase ${first + 1}. Make the two names less alike.` })
       } else {
         labels.set(label.toLowerCase(), i)
       }
@@ -352,7 +488,13 @@ export function phasesFromChain(
     const draft = emptyPhase()
     draft.key = `chain-${i}-${group.label}`
     draft.label = group.label
-    draft.displayName = byLabel.get(group.label)?.displayName ?? ''
+    // Live on chain: keep this label whatever happens to the display name, or renaming a
+    // phase in the panel silently invalidates a mint someone is in the middle of.
+    draft.labelLocked = true
+    // Falls back to the label so a phase whose copy was never saved still has a name in
+    // the field — otherwise the editor would look like it lost it, and saving would
+    // derive a different label from an empty name.
+    draft.displayName = byLabel.get(group.label)?.displayName ?? group.label
     draft.description = byLabel.get(group.label)?.description ?? ''
     draft.startsAt = toLocalInput(group.startsAtIso)
     draft.endsAt = toLocalInput(group.endsAtIso)
