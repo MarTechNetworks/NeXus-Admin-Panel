@@ -38,6 +38,7 @@ NETWORK=${NETWORK:-martech-network}
 UPSTREAM_FILE=${UPSTREAM_FILE:-/etc/traefik/dynamic/nexus-admin-upstream.yml}
 TRAEFIK_API=${TRAEFIK_API:-http://127.0.0.1:8099}
 TRAEFIK_SERVICE=${TRAEFIK_SERVICE:-nexus-admin}
+TRAEFIK_ROUTER=${TRAEFIK_ROUTER:-admin}
 PUBLIC_HOST=${PUBLIC_HOST:-admin.nexus-web3.com}
 
 # Optional. The console is a pure client-side caller of the public API and every
@@ -86,6 +87,42 @@ if ! flock -w "$LOCK_WAIT" 9; then
     exit 1
 fi
 echo -e "${GREEN}✓ Deploy lock acquired${NC}"
+
+# ── Refuse to deploy if the proxy half of the swap is not there ──────────────
+#
+# This guard exists because its absence caused an outage on the frontend, whose
+# script is this script's sibling. The Traefik version reached a host still
+# running nginx: it started the new container, health-checked it fine, wrote a
+# Traefik service file nothing was reading, could not confirm the flip, took its
+# revert path -- which could not confirm either -- and then removed the container
+# it had just started, leaving the old proxy pointing at an empty port.
+#
+# So: establish that the thing we switch traffic with is running and actually
+# routing this hostname, BEFORE pulling, starting or writing anything.
+# Mirrors require_traefik_service in Backend/deploy/deploy.sh.
+require_traefik() {
+    local routed
+    if ! curl -fsS --max-time 5 "$TRAEFIK_API/ping" >/dev/null 2>&1; then
+        echo -e "${RED}✗ Traefik is not answering on $TRAEFIK_API${NC}"
+        echo -e "${GREEN}  Nothing has changed - whatever is serving now keeps serving.${NC}"
+        echo -e "${YELLOW}  This script switches traffic by rewriting${NC}"
+        echo -e "${YELLOW}    $UPSTREAM_FILE${NC}"
+        echo -e "${YELLOW}  which only works once the host has been migrated off nginx:${NC}"
+        echo -e "${YELLOW}    /root/traefik-migration/cutover.sh status${NC}"
+        return 1
+    fi
+    routed=$(curl -fsS --max-time 5 "$TRAEFIK_API/api/http/routers/${TRAEFIK_ROUTER}@file" 2>/dev/null \
+               | jq -r '.service // empty' 2>/dev/null || true)
+    if [ "$routed" != "$TRAEFIK_SERVICE" ]; then
+        echo -e "${RED}✗ Traefik router '${TRAEFIK_ROUTER}@file' routes to '${routed:-<missing>}', not '$TRAEFIK_SERVICE'${NC}"
+        echo -e "${GREEN}  Nothing has changed.${NC}"
+        echo -e "${YELLOW}  Routers must reference the service BY NAME - see${NC}"
+        echo -e "${YELLOW}  infrastructure/traefik/dynamic/routers.yml${NC}"
+        return 1
+    fi
+    echo -e "${GREEN}✓ Traefik routes '${TRAEFIK_ROUTER}' → '$TRAEFIK_SERVICE' - the flip is wired${NC}"
+}
+require_traefik
 
 # ---------------------------------------------------------------- disk hygiene
 
@@ -463,8 +500,13 @@ if ! confirm_switch "$STANDBY_PORT"; then
         echo -e "${YELLOW}    curl -s $TRAEFIK_API/api/http/services/${TRAEFIK_SERVICE}@file | jq${NC}"
         echo -e "${YELLOW}    docker logs nexus-traefik --tail 50${NC}"
     fi
-    docker logs "$CONTAINER-new" --tail 30
-    docker rm -f "$CONTAINER-new" >/dev/null 2>&1 || true
+    # The new container is NOT removed here, and that is deliberate. It passed
+    # its health check -- the proxy is what failed -- so throwing it away is how
+    # a proxy problem turned into a site outage on the frontend once already.
+    echo -e "${YELLOW}  $CONTAINER-new is left RUNNING and healthy on :$STANDBY_PORT.${NC}"
+    echo -e "${YELLOW}  Finish the flip by hand once the proxy is sorted:${NC}"
+    echo -e "${YELLOW}    sed -i 's|127.0.0.1:$LIVE_PORT|127.0.0.1:$STANDBY_PORT|' $UPSTREAM_FILE${NC}"
+    echo -e "${YELLOW}    docker rm -f $CONTAINER && docker rename $CONTAINER-new $CONTAINER${NC}"
     exit 1
 fi
 echo -e "${GREEN}✓ Traefik is serving :$STANDBY_PORT${NC}"
