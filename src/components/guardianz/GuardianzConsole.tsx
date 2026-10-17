@@ -102,6 +102,15 @@ export function GuardianzConsole() {
   const col = s?.collection ?? null
   const isCreator = !!wallet.address && wallet.address === CREATOR_WALLET
   const remaining = col?.remaining ?? 0
+  /**
+   * What the candy machine is sized to — the snapshot's entry count, not `remaining`.
+   *
+   * They differ by the two burned assets: `remaining` is `totalSupply - numMinted` and
+   * `num_minted` never decrements, so it reads 6,214 while the pool that will be uploaded
+   * holds 6,216. `itemsAvailable` cannot be changed after creation, so the smaller number
+   * would strand two files behind a rent deposit the creator has already paid.
+   */
+  const poolSize = s?.poolSize ?? 0
 
   // Switching to a different account mid-flow is exactly how the wrong key signs;
   // clear any stale error the moment the address changes.
@@ -114,8 +123,10 @@ export function GuardianzConsole() {
     : !reclaimDone
       ? 'Sign step 1 first.'
       : !OPS_WALLET
-        ? 'NEXT_PUBLIC_GUARDIANZ_OPS_WALLET is not configured on this deployment — nothing to assign as operator.'
-        : null
+        ? 'No operator wallet configured on this deployment — nothing to assign as candy machine authority.'
+        : poolSize === 0
+          ? 'The snapshot of unminted items has not loaded, so there is no size to create the candy machine at. Reload before signing — itemsAvailable cannot be changed afterwards.'
+          : null
 
   const run = useCallback(
     async (id: StepId, split?: RoyaltySplit) => {
@@ -132,7 +143,7 @@ export function GuardianzConsole() {
           const { signature } = await updateRoyaltySplit(umi, split)
           setSigned((l) => [...l, { step: id, signature }])
         } else {
-          const { signature, candyMachine } = await createCandyMachine(umi, { itemsAvailable: remaining })
+          const { signature, candyMachine } = await createCandyMachine(umi, { itemsAvailable: poolSize })
           setSigned((l) => [...l, { step: id, signature, candyMachine }])
         }
         await status.refetch()
@@ -143,7 +154,7 @@ export function GuardianzConsole() {
         setBusy(null)
       }
     },
-    [isCreator, wallet, remaining, status],
+    [isCreator, wallet, poolSize, status],
   )
 
   const walletTone = useMemo(() => {
@@ -297,7 +308,7 @@ export function GuardianzConsole() {
             disabled={!isCreator || createDone || busy !== null || !!createBlocked}
             blocked={createDone ? null : createBlocked}
             onSign={() => run('create')}
-            what={`Creates a Metaplex Core Candy Machine for the ${remaining.toLocaleString()} remaining items, priced at 0.25 SOL to your wallet, with NeXus (${OPS_WALLET ? shortAddress(OPS_WALLET, 4, 4) : 'ops wallet'}) as operator so we can upload the items.`}
+            what={`Creates a Metaplex Core Candy Machine sized to the ${poolSize.toLocaleString()} items still unminted${poolSize !== remaining ? ` (the collection counter says ${remaining.toLocaleString()}; two assets were burned and it does not count those back)` : ''}, priced at 0.25 SOL to your wallet, with NeXus (${shortAddress(OPS_WALLET, 4, 4)}) as operator so we can upload the items.`}
             why="You sign as the collection authority (required by Core) and as payer, so the rent deposit goes from your wallet straight into the candy machine account. It is refundable to you when the mint is over."
             cost="~0.55 SOL deposit (refundable) + fee"
           />

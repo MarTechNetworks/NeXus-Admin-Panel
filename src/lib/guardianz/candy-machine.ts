@@ -30,8 +30,15 @@ import { GUARDIANZ_COLLECTION } from '@/lib/guardianz/constants'
  * transactions can be signed by us rather than by the creator. It is *not* the payer
  * of the rent deposit; the creator pays that directly at creation, which is what makes
  * the deposit go wallet → candy machine → wallet with nobody in between.
+ *
+ * Hardcoded as the default rather than left to env, because it is a **public key** and
+ * `NEXT_PUBLIC_*` is inlined at build time: it was never declared as an ARG in the
+ * Dockerfile or passed in the deploy workflow, so every CI image shipped with this empty
+ * and step 2 permanently disabled — a deployment-shaped bug for a value that is not a
+ * secret. Env still wins when set, for a throwaway operator on a test run.
  */
-export const OPS_WALLET = process.env.NEXT_PUBLIC_GUARDIANZ_OPS_WALLET ?? ''
+export const OPS_WALLET =
+  process.env.NEXT_PUBLIC_GUARDIANZ_OPS_WALLET ?? '3NMwWyNqdWDyrVJmEUtWGYf7GnxBk2zXaXBz8moqtF9K'
 
 /**
  * Where the buyer's flat platform fee goes. Candy Guard's `solPayment` allows one

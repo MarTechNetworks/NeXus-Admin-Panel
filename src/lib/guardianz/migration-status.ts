@@ -43,6 +43,17 @@ import {
 import { findCandyMachine } from '@/lib/guardianz/candy-machine'
 import { guardAuthority, summariseGroups, type GuardGroupSummary } from '@/lib/guardianz/guard-groups'
 import { readUmi } from '@/lib/guardianz/umi'
+import snapshot from '@/lib/guardianz/data/snapshot.json'
+
+/**
+ * The size of the pool that will actually be uploaded.
+ *
+ * Imported here rather than in the console because this module only ever runs
+ * server-side (the client takes `MigrationStatus` as a type-only import), so the
+ * snapshot's ~370 KB stays out of the browser bundle while the number it carries
+ * reaches the UI through the status payload.
+ */
+const SNAPSHOT_POOL_SIZE: number = snapshot.entries.length
 
 export type GateState = 'pass' | 'fail' | 'unknown'
 
@@ -84,6 +95,19 @@ export interface MigrationStatus {
   fetchedAt: string
   rpcOk: boolean
   error: string | null
+
+  /**
+   * How many config lines the candy machine must be created with — the snapshot's own
+   * entry count, which is the only number that reconciles.
+   *
+   * NOT `totalSupply - numMinted`. Two assets have been burned, and MPL Core's
+   * `num_minted` counts mints ever made and never decrements, so that subtraction says
+   * 6,214 while the snapshot (built by diffing the 1,359 assets that actually exist
+   * against 0…7574) holds 6,216. `itemsAvailable` is immutable after creation, so
+   * creating with the smaller number orphans two files permanently — the creator would
+   * have to pay a second rent deposit to fix it.
+   */
+  poolSize: number
 
   /** Live collection state. Null when the RPC call failed. */
   collection: {
@@ -216,6 +240,7 @@ export async function readMigrationStatus(): Promise<MigrationStatus> {
     fetchedAt,
     rpcOk,
     error,
+    poolSize: SNAPSHOT_POOL_SIZE,
     collection,
     candyMachine,
     gates,
