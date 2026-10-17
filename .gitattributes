@@ -1,0 +1,8 @@
+* text=auto
+
+# deploy-zero-downtime.sh is scp'd to the Linux VPS and run there. CRLF means
+# bash dies on the shebang — `#!/bin/bash\r` is not a program — and the Traefik
+# service YAML this script writes would carry \r into a quoted scalar, which
+# Traefik rejects as a parse error. Matches Backend/.gitattributes.
+*.sh text eol=lf
+Dockerfile text eol=lf

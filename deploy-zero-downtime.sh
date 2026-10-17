@@ -28,7 +28,17 @@ NEW_IMAGE=$(echo "$1" | tr '[:upper:]' '[:lower:]')
 
 CONTAINER=nexus-admin
 NETWORK=${NETWORK:-martech-network}
-UPSTREAM_FILE=${UPSTREAM_FILE:-/etc/nginx/conf.d/nexus-admin-upstream.conf}
+
+# ── The traffic switch ──────────────────────────────────────────────────────
+# Replaces /etc/nginx/conf.d/nexus-admin-upstream.conf and the
+# `nginx -t && nginx -s reload` that followed it. Traefik's file provider
+# watches /etc/traefik/dynamic, so rewriting this file IS the switch -- adopted
+# in about a second, with no signal and no worker drain, and requests already
+# in flight finish against the old port.
+UPSTREAM_FILE=${UPSTREAM_FILE:-/etc/traefik/dynamic/nexus-admin-upstream.yml}
+TRAEFIK_API=${TRAEFIK_API:-http://127.0.0.1:8099}
+TRAEFIK_SERVICE=${TRAEFIK_SERVICE:-nexus-admin}
+PUBLIC_HOST=${PUBLIC_HOST:-admin.nexus-web3.com}
 
 # Optional. The console is a pure client-side caller of the public API and every
 # value it needs is a NEXT_PUBLIC_* baked in at image build time (see
@@ -339,10 +349,15 @@ if [ -f "$ENV_FILE" ]; then
 fi
 
 docker rm -f "$CONTAINER-new" 2>/dev/null || true
-# 127.0.0.1 in the publish spec, not a bare port: nginx is the only thing that
-# should be able to reach the console, and a bare `-p 3030:3000` would publish it
-# on every interface. This is why the container is NOT on --network host the way
-# the frontend's is -- host networking cannot bind to loopback only.
+# 127.0.0.1 in the publish spec, not a bare port: the edge proxy is the only
+# thing that should be able to reach the console, and a bare `-p 3030:3000`
+# would publish it on every interface. This is why the container is NOT on
+# --network host the way the frontend's is -- host networking cannot bind to
+# loopback only.
+#
+# It is also why Traefik itself runs on the host network: a bridged proxy cannot
+# reach a port published on 127.0.0.1 at all. See
+# infrastructure/traefik/docker-compose.yml.
 docker run -d \
     --name "$CONTAINER-new" \
     --restart no \
@@ -361,7 +376,7 @@ docker run -d \
 # Health-gate the cutover.
 #
 # This step did not exist: the script defined the --health-cmd above and then
-# repointed nginx immediately, without ever reading the result. A container that
+# repointed the proxy immediately, without ever reading the result. A container that
 # was still booting -- or one that would never come up at all, because the image
 # was bad -- got production traffic the instant `docker run` returned, which is
 # an outage the blue-green dance is specifically supposed to prevent.
@@ -392,13 +407,67 @@ if [ "$HEALTHY" != "true" ]; then
 fi
 echo -e "${GREEN}✓ New container is healthy${NC}"
 
+# Point the Traefik service at $1. printf rather than a heredoc so no CRLF can
+# reach the YAML if this file is ever edited on Windows. Mirrors
+# infrastructure/traefik/dynamic/nexus-admin-upstream.yml.
+write_upstream() {
+    printf '%s\n' \
+        '# OWNED BY admin/deploy-zero-downtime.sh -- hand edits are overwritten.' \
+        '# Full commentary: infrastructure/traefik/dynamic/nexus-admin-upstream.yml' \
+        'http:' \
+        '  services:' \
+        '    nexus-admin:' \
+        '      loadBalancer:' \
+        '        passHostHeader: true' \
+        '        serversTransport: default@file' \
+        '        servers:' \
+        "          - url: \"http://127.0.0.1:$1\"" \
+        > "$UPSTREAM_FILE"
+}
+
+traefik_target() {
+    curl -fsS --max-time 5 "$TRAEFIK_API/api/http/services/${TRAEFIK_SERVICE}@file" 2>/dev/null \
+        | jq -r '.loadBalancer.servers[0].url // empty' 2>/dev/null || true
+}
+
+# Confirm the flip against Traefik's runtime state AND end to end through the
+# public hostname, as the frontend script does. Replaces `nginx -t`, which could
+# only say the config parsed -- never that a reload had taken effect.
+confirm_switch() {
+    local want="http://127.0.0.1:$1" i
+    for i in $(seq 1 30); do
+        if [ "$(traefik_target)" = "$want" ] \
+           && curl -fsS -o /dev/null --max-time 10 \
+                --resolve "$PUBLIC_HOST:443:127.0.0.1" \
+                "https://$PUBLIC_HOST:443/login" 2>/dev/null; then
+            return 0
+        fi
+        sleep 1
+    done
+    return 1
+}
+
 echo -e "${YELLOW}[4/5] Switching traffic (zero downtime)...${NC}"
-printf 'upstream nexus_admin {\n    server 127.0.0.1:%s;\n    keepalive 32;\n}\n' "$STANDBY_PORT" > "$UPSTREAM_FILE"
-# Validate before reloading, as the frontend script does. A bad upstream file is
-# otherwise discovered by nginx refusing the reload, at which point the old
-# container is already on its way out and traffic has nowhere to go.
-nginx -t
-nginx -s reload
+write_upstream "$STANDBY_PORT"
+
+# Revert on an unconfirmed switch. The old container is still running and still
+# published on $LIVE_PORT at this point -- it is retired in step 5 below -- so
+# putting the file back actually restores service.
+if ! confirm_switch "$STANDBY_PORT"; then
+    echo -e "${RED}✗ Traefik did not take up :$STANDBY_PORT${NC}"
+    write_upstream "$LIVE_PORT"
+    if confirm_switch "$LIVE_PORT"; then
+        echo -e "${GREEN}  Reverted - the old container on :$LIVE_PORT is serving again.${NC}"
+    else
+        echo -e "${RED}  Revert unconfirmed too. Inspect:${NC}"
+        echo -e "${YELLOW}    curl -s $TRAEFIK_API/api/http/services/${TRAEFIK_SERVICE}@file | jq${NC}"
+        echo -e "${YELLOW}    docker logs nexus-traefik --tail 50${NC}"
+    fi
+    docker logs "$CONTAINER-new" --tail 30
+    docker rm -f "$CONTAINER-new" >/dev/null 2>&1 || true
+    exit 1
+fi
+echo -e "${GREEN}✓ Traefik is serving :$STANDBY_PORT${NC}"
 
 echo -e "${YELLOW}[5/5] Retiring old container...${NC}"
 # stop, then rename the retired one aside rather than removing it -- the frontend
@@ -427,7 +496,9 @@ echo -e "${GREEN}✓ Admin console live on port $STANDBY_PORT${NC}"
 echo -e "${YELLOW}  Roll back by hand if the registry is the problem:${NC}"
 echo -e "${YELLOW}    docker rm -f $CONTAINER && docker rename $CONTAINER-prev $CONTAINER${NC}"
 echo -e "${YELLOW}    docker start $CONTAINER${NC}"
-echo -e "${YELLOW}    # then repoint $UPSTREAM_FILE at the old port and: nginx -t && nginx -s reload${NC}"
+echo -e "${YELLOW}    sed -i 's|127.0.0.1:$STANDBY_PORT|127.0.0.1:$LIVE_PORT|' $UPSTREAM_FILE${NC}"
+# No reload in that rollback: Traefik watches the directory and adopts the edit
+# by itself, which is the one way this is simpler than nginx was.
 
 echo -e "${YELLOW}Cleaning up old Docker images (keeping newest $KEEP_IMAGES per repo)...${NC}"
 reclaim_disk

@@ -2,14 +2,14 @@
 #
 # NOT THE DEPLOY PATH. .github/workflows/deploy.yml runs
 # admin/deploy-zero-downtime.sh instead, which blue-greens the container across
-# host ports 3020/3030 and flips the nginx upstream. This file is kept for
+# host ports 3020/3030 and flips the Traefik service. This file is kept for
 # manual bring-up and as the reference for what the running container looks
 # like — the script mirrors its network, loopback publish, resource limits and
 # healthcheck deliberately.
 #
 # Do not `docker compose up -d admin` against a live host: it claims the same
 # `container_name` and the same 3020 the script may currently have live, so it
-# will either fail on the name or strand the nginx upstream pointing at a port
+# will either fail on the name or strand the Traefik service pointing at a port
 # nothing serves. Roll back with the script and an older image tag instead.
 #
 # IMPORTANT: NEXT_PUBLIC_* values are NOT set here. Next.js inlines them into the
@@ -23,9 +23,10 @@ services:
     image: ghcr.io/martechnetworks/nexus-admin:production
     container_name: nexus-admin
     # 3020 on the host so it does not collide with the public frontend, which
-    # blue-greens across 3000/3010. nginx (infrastructure/nginx/nexus.conf)
-    # routes admin.nexus-web3.com here. Bound to loopback — nginx is the only
-    # thing that should reach it.
+    # blue-greens across 3000/3010. Traefik
+    # (infrastructure/traefik/dynamic/routers.yml) routes admin.nexus-web3.com
+    # here. Bound to loopback — the proxy is the only thing that should reach it,
+    # which is also why Traefik itself runs on the host network.
     ports:
       - "127.0.0.1:3020:3000"
     networks:

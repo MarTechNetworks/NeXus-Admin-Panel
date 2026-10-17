@@ -111,8 +111,8 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
-    # Queue deploys, never cancel them. A cancel lands mid-script, after nginx is
-    # repointed but before the old container is retired, or worse. Note this
+    # Queue deploys, never cancel them. A cancel lands mid-script, after Traefik
+    # is repointed but before the old container is retired, or worse. Note this
     # group is per-repository -- the flock in deploy-zero-downtime.sh is what
     # serialises this against the frontend and backend pipelines, which deploy to
     # the same box and share its disk.
@@ -136,7 +136,7 @@ jobs:
           overwrite: true
 
       # Blue-green: boot the new image on the idle port (3020⇄3030), health-check
-      # it, flip the nginx upstream, and only then retire the old container.
+      # it, flip the Traefik service, and only then retire the old container.
       - name: Deploy to VPS
         uses: appleboy/ssh-action@v1.2.5
         with:
@@ -147,7 +147,7 @@ jobs:
           # The script waits up to 900s for the host deploy lock (backend,
           # frontend and admin all take it) and then on the health probe, so the
           # old 240s ceiling could kill it mid-swap -- after the new container is
-          # up but before nginx is repointed.
+          # up but before Traefik is repointed.
           command_timeout: 20m
           script: |
             set -e
