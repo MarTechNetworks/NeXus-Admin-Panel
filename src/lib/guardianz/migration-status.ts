@@ -25,12 +25,11 @@
  * reach the RPC" and "the creator has not signed yet" are different situations, and
  * collapsing them into one red light is how a page starts lying during an outage.
  */
-import { Connection, PublicKey } from '@solana/web3.js'
+import { PublicKey } from '@solana/web3.js'
 
 import {
   CREATOR_WALLET,
   GUARDIANZ_COLLECTION,
-  GUARDIANZ_RPC_URL,
   LMN_CONFIG_PDA,
   TOTAL_SUPPLY,
 } from '@/lib/guardianz/constants'
@@ -42,6 +41,7 @@ import {
 } from '@/lib/guardianz/core-account'
 import { findCandyMachine } from '@/lib/guardianz/candy-machine'
 import { guardAuthority, summariseGroups, type GuardGroupSummary } from '@/lib/guardianz/guard-groups'
+import { guardianzConnection } from '@/lib/guardianz/rpc'
 import { readUmi } from '@/lib/guardianz/umi'
 import snapshot from '@/lib/guardianz/data/snapshot.json'
 
@@ -168,7 +168,7 @@ export async function readMigrationStatus(): Promise<MigrationStatus> {
   let error: string | null = null
 
   try {
-    const connection = new Connection(GUARDIANZ_RPC_URL, 'confirmed')
+    const connection = guardianzConnection()
     const info = await connection.getAccountInfo(new PublicKey(GUARDIANZ_COLLECTION))
     if (!info) throw new Error('Collection account not found on mainnet.')
     collection = summarise(decodeCoreCollection(Buffer.from(info.data)))
