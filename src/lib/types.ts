@@ -99,8 +99,31 @@ export interface RevenueSummary {
   paidCollections: number
   freeCollections: number
   treasuryWallet: string
-  treasuryBalance: number | null
+
+  /**
+   * Fee income read off the chain, credit by credit (treasury_income).
+   *
+   * This — not a wallet balance — is what the platform has been paid. PLATFORM_WALLET is
+   * also the program deploy payer and upgrade authority on mainnet, so its balance holds
+   * money that was never revenue; the page used to show that balance as "Treasury".
+   */
+  feesReceived: number
+  feesReceived24h: number
+  feesReceived7d: number
+  feesReceived30d: number
+  feeRecipients: Array<{ wallet: string; shareBps: number | null; sol: number }>
+  /** Observed credits, not mints — one mint paying two recipients is two credits. */
+  treasuryCredits: number
+  /** ISO timestamp, or null when the scanner has never run. Do not render null as 0. */
+  treasuryScannedAt: string | null
+  /** True while the scan trails the chain tip: the totals are a floor, not a total. */
+  treasuryBacklog: boolean
+
+  /** Raw SOL balance of the fee wallet. Informational — it is not revenue. */
+  walletBalance: number | null
+
   expectedAccrued: number
+  /** feesReceived − expectedAccrued. Null until the first scan. */
   treasuryDrift: number | null
   /** Flat per-NFT fee applied to rows with no stored rate — lamports and SOL. */
   defaultFeeLamports: number

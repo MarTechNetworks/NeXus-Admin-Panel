@@ -80,15 +80,38 @@ export default function RevenuePage() {
 
   const kpis = [
     { label: 'All-time fee revenue', value: fmtSol(summary?.allTimeRevenue), sub: 'Platform cut, all collections' },
-    { label: 'Last 30 days', value: fmtSol(summary?.last30d), sub: 'From the fee ledger' },
-    { label: 'Last 7 days', value: fmtSol(summary?.last7d), sub: `Today: ${fmtSol(summary?.last24h)}` },
+    // The ledger figures are derived from on-chain `minted` deltas; the received figures
+    // are what the fee wallets were actually credited. Showing them side by side is the
+    // cheapest possible reconciliation — if they diverge, one of the two is wrong and
+    // someone should find out which before the gap grows.
     {
-      label: 'Treasury balance',
-      value: fmtSol(summary?.treasuryBalance),
+      label: 'Last 30 days',
+      value: fmtSol(summary?.last30d),
       sub:
-        summary?.treasuryDrift == null
-          ? 'RPC unavailable'
-          : `Drift vs accrued: ${fmtSol(summary.treasuryDrift)}`,
+        summary?.treasuryScannedAt == null
+          ? 'From the fee ledger'
+          : `Ledger · received ${fmtSol(summary.feesReceived30d)}`,
+    },
+    {
+      label: 'Last 7 days',
+      value: fmtSol(summary?.last7d),
+      sub:
+        summary?.treasuryScannedAt == null
+          ? `Today: ${fmtSol(summary?.last24h)}`
+          : `Today ${fmtSol(summary.last24h)} · received ${fmtSol(summary.feesReceived7d)}`,
+    },
+    {
+      // Money the chain actually paid the fee wallets, not what they hold. The old card
+      // here showed getBalance(PLATFORM_WALLET) — a wallet that is also the program
+      // deploy payer and upgrade authority, so its balance was mostly deploy change.
+      label: 'Fees received on-chain',
+      value: summary?.treasuryScannedAt == null ? '—' : fmtSol(summary?.feesReceived),
+      sub:
+        summary?.treasuryScannedAt == null
+          ? 'Not scanned yet'
+          : summary.treasuryBacklog
+            ? `Catching up — at least ${fmtSol(summary.feesReceived)} so far`
+            : `Vs accrued: ${fmtSol(summary.treasuryDrift)} · ${summary.treasuryCredits} credits`,
     },
   ]
 
@@ -129,11 +152,36 @@ export default function RevenuePage() {
               ))}
         </div>
         {summary && (
-          <p className="mt-3 text-xs" style={{ color: '#6a6a7a' }}>
-            Treasury wallet <span style={{ color: '#b8b8c8' }}>{summary.treasuryWallet}</span> · default fee{' '}
-            {summary.defaultFeeSol} SOL per NFT (flat, every mint) · {summary.paidCollections} paid /{' '}
-            {summary.freeCollections} free collections
-          </p>
+          <>
+            <p className="mt-3 text-xs" style={{ color: '#6a6a7a' }}>
+              Default fee {summary.defaultFeeSol} SOL per NFT (flat, every mint) ·{' '}
+              {summary.paidCollections} paid / {summary.freeCollections} free collections
+            </p>
+            {/* Per-recipient, because the split is the thing most likely to be wrong — a
+                fee wallet nobody holds has already been published once on this platform,
+                and an averaged total would have hidden it. */}
+            <p className="mt-1 text-xs" style={{ color: '#6a6a7a' }}>
+              Fee recipients:{' '}
+              {summary.feeRecipients.map((r, i) => (
+                <span key={r.wallet}>
+                  {i > 0 && ' · '}
+                  <span style={{ color: '#b8b8c8' }}>
+                    {r.wallet.slice(0, 4)}…{r.wallet.slice(-4)}
+                  </span>
+                  {r.shareBps != null && ` ${r.shareBps / 100}%`} received {fmtSol(r.sol)}
+                </span>
+              ))}
+            </p>
+            {/* The old headline number, demoted to what it is. This wallet is also the
+                program deploy payer, the upgrade authority and PLATFORM_AUTHORITY, so its
+                balance mixes fee income with deploy funding and ops spending — it is not
+                revenue and must never be presented as a treasury total again. */}
+            <p className="mt-1 text-xs" style={{ color: '#6a6a7a' }}>
+              Fee wallet <span style={{ color: '#b8b8c8' }}>{summary.treasuryWallet}</span> holds{' '}
+              {summary.walletBalance == null ? 'unknown (RPC down)' : fmtSol(summary.walletBalance)} — a raw
+              balance, not revenue: this key also pays for deploys and holds ops funds.
+            </p>
+          </>
         )}
       </section>
 
