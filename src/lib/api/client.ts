@@ -94,6 +94,15 @@ export const api = {
       body: body ? JSON.stringify(body) : undefined,
     }),
 
+  // PUT, for endpoints that replace a whole document rather than patching fields —
+  // GuardianZ's phase config is saved as one object, not field by field.
+  put: <T>(endpoint: string, body?: unknown, config?: RequestConfig) =>
+    request<T>(endpoint, {
+      ...config,
+      method: 'PUT',
+      body: body ? JSON.stringify(body) : undefined,
+    }),
+
   patch: <T>(endpoint: string, body?: unknown, config?: RequestConfig) =>
     request<T>(endpoint, {
       ...config,

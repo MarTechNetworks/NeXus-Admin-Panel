@@ -59,6 +59,11 @@ export interface CandyMachineState {
   itemsRedeemed: number
   /** Every config line uploaded — the precondition for minting. */
   fullyLoaded: boolean
+  /**
+   * The Candy Guard account — the machine's `mintAuthority`, and the account
+   * `updateCandyGuard` is addressed to when phases are edited.
+   */
+  candyGuard: string
   guard: CandyGuard | null
   /** Price the guard charges, in lamports, or null when there is no solPayment guard. */
   priceLamports: number | null
@@ -101,6 +106,7 @@ async function toState(umi: Umi, cm: CandyMachine): Promise<CandyMachineState> {
     itemsLoaded: cm.itemsLoaded,
     itemsRedeemed: Number(cm.itemsRedeemed),
     fullyLoaded: cm.itemsLoaded >= itemsAvailable,
+    candyGuard: cm.mintAuthority.toString(),
     guard,
     priceLamports,
     raw: cm,

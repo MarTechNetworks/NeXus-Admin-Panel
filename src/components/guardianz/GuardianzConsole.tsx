@@ -52,6 +52,7 @@ import {
   Section,
   TextInput,
 } from '@/components/authority/primitives'
+import { PhaseEditor } from '@/components/guardianz/PhaseEditor'
 import { useWallet } from '@/lib/solana/wallet'
 import { shortAddress } from '@/lib/authority/format'
 import { CREATOR_WALLET, GUARDIANZ_COLLECTION, LMN_CONFIG_PDA, ROYALTY_BPS } from '@/lib/guardianz/constants'
@@ -323,6 +324,18 @@ export function GuardianzConsole() {
           </ul>
         )}
       </Section>
+
+      {/* ── Mint phases & whitelists ────────────────────────────────────── */}
+      {/* Its own signer (the candy guard's authority, i.e. the ops wallet) and its own
+          save path, so it sits outside the creator's numbered steps rather than becoming
+          step 3. It is also the one section here that is used after launch, repeatedly. */}
+      <PhaseEditor
+        groups={s?.candyMachine?.groups ?? []}
+        candyGuard={s?.candyMachine?.candyGuard ?? null}
+        guardAuthority={s?.candyMachine?.guardAuthority ?? null}
+        defaultPriceLamports={s?.candyMachine?.priceLamports ?? null}
+        onSaved={() => void status.refetch()}
+      />
 
       {/* ── Royalties ───────────────────────────────────────────────────── */}
       <Section

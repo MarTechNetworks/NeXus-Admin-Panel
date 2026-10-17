@@ -41,6 +41,7 @@ import {
   type CoreCollection,
 } from '@/lib/guardianz/core-account'
 import { findCandyMachine } from '@/lib/guardianz/candy-machine'
+import { guardAuthority, summariseGroups, type GuardGroupSummary } from '@/lib/guardianz/guard-groups'
 import { readUmi } from '@/lib/guardianz/umi'
 
 export type GateState = 'pass' | 'fail' | 'unknown'
@@ -61,7 +62,22 @@ export interface CandyMachineSummary {
   itemsLoaded: number
   itemsRedeemed: number
   fullyLoaded: boolean
+  /** The default guard set's price, when there are no groups. Null once groups exist. */
   priceLamports: number | null
+  /** The Candy Guard account — what `updateCandyGuard` is addressed to. */
+  candyGuard: string
+  /**
+   * The wallet that must sign a phase edit. Read off the guard account, never assumed:
+   * it is `setCandyGuardAuthority`'d to the ops wallet at creation and can be moved
+   * again, and the editor gates its save button on this matching the connected wallet.
+   */
+  guardAuthority: string | null
+  /**
+   * The live mint phases, flattened for the wire. Empty means the guard has no groups
+   * and the default guard set is in force — a different state from "no phases", and the
+   * editor says which one it is looking at.
+   */
+  groups: GuardGroupSummary[]
 }
 
 export interface MigrationStatus {
@@ -144,6 +160,9 @@ export async function readMigrationStatus(): Promise<MigrationStatus> {
         itemsRedeemed: cm.itemsRedeemed,
         fullyLoaded: cm.fullyLoaded,
         priceLamports: cm.priceLamports,
+        candyGuard: cm.candyGuard,
+        guardAuthority: guardAuthority(cm.guard),
+        groups: summariseGroups(cm.guard),
       }
     }
   } catch (e) {

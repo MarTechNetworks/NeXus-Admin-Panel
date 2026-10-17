@@ -9,7 +9,7 @@
  * from anywhere on the page, without opening the review dialog.
  */
 import type { ReactNode } from 'react'
-import { AlertTriangle, Info, RotateCcw, ShieldAlert } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, Info, RotateCcw, ShieldAlert } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { shortAddress } from '@/lib/authority/format'
 
@@ -328,11 +328,19 @@ export function Callout({
   level = 'info',
   children,
 }: {
-  level?: 'info' | 'warning' | 'danger'
+  level?: 'info' | 'success' | 'warning' | 'danger'
   children: ReactNode
 }) {
   const palette = {
     info: { color: 'var(--accent)', bg: 'var(--accent-soft)', border: 'var(--accent-line)', Icon: Info },
+    // Used for "this landed on chain" confirmations, which were reading as neutral info
+    // next to the warnings they sit beside.
+    success: {
+      color: 'var(--accent-success)',
+      bg: 'rgba(34, 197, 94, 0.1)',
+      border: 'rgba(34, 197, 94, 0.28)',
+      Icon: CheckCircle2,
+    },
     warning: {
       color: 'var(--accent-warning)',
       bg: 'rgba(245, 158, 11, 0.1)',
