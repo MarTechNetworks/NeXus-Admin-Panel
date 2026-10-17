@@ -45,6 +45,6 @@ minimumReleaseAgeExclude:
   - '@next/swc-win32-x64-msvc@16.3.8'
   - eslint-config-next@16.3.8
   - next@16.3.8
-  - lucide-react@1.51.0
+  - lucide-react@1.51.0 || 1.59.0
 overrides:
   'sharp@<0.35.0': 0.35.0
