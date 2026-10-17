@@ -154,10 +154,12 @@ function StatusPill({ status, glass = false }: { status: CollectionStatus; glass
     <span
       className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium capitalize"
       style={{
-        background: glass ? 'rgba(10,10,15,0.55)' : `${accent}1a`,
+        // Denser fill instead of blur(8px): this renders once per card in the
+        // grid, so the blur was N backdrop roots over the artwork, all
+        // re-sampled on every scrolled frame.
+        background: glass ? 'rgba(10,10,15,0.82)' : `${accent}1a`,
         color: glass ? '#ffffff' : accent,
         border: `1px solid ${accent}59`,
-        backdropFilter: glass ? 'blur(8px)' : undefined,
       }}
     >
       <span
@@ -238,7 +240,7 @@ function FeaturedStar({
       className="inline-flex h-7 w-7 items-center justify-center rounded-md transition-colors"
       style={
         floating
-          ? { background: 'rgba(10,10,15,0.55)', backdropFilter: 'blur(8px)', border: `1px solid ${GRID}` }
+          ? { background: 'rgba(10,10,15,0.82)', border: `1px solid ${GRID}` }
           : undefined
       }
     >

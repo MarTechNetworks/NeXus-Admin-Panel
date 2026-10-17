@@ -26,8 +26,7 @@ function RankMedal({ rank }: { rank: number }) {
     <span
       className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-bold"
       style={{
-        background: 'rgba(10,10,15,0.55)',
-        backdropFilter: 'blur(8px)',
+        background: 'rgba(10,10,15,0.82)',
         border: `1px solid ${color}80`,
         color,
         boxShadow: `0 0 12px ${color}40`,
@@ -81,8 +80,7 @@ function SpotlightCard({
           title="Remove from featured"
           className="absolute bottom-3 right-3 inline-flex h-7 w-7 items-center justify-center rounded-md opacity-0 transition-opacity group-hover:opacity-100"
           style={{
-            background: 'rgba(10,10,15,0.6)',
-            backdropFilter: 'blur(8px)',
+            background: 'rgba(10,10,15,0.85)',
             border: '1px solid rgba(239,68,68,0.4)',
             color: '#ef4444',
           }}

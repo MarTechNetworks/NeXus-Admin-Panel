@@ -124,10 +124,11 @@ export function StatusPill({ status, glass = false }: { status: CollectionStatus
     <span
       className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium capitalize"
       style={{
-        background: glass ? 'rgba(10,10,15,0.55)' : `${accent}1a`,
+        // Denser fill instead of blur(8px) — one per card in a grid, and each
+        // blur is a backdrop root the compositor re-samples while scrolling.
+        background: glass ? 'rgba(10,10,15,0.82)' : `${accent}1a`,
         color: glass ? '#ffffff' : accent,
         border: `1px solid ${accent}59`,
-        backdropFilter: glass ? 'blur(8px)' : undefined,
       }}
     >
       <span

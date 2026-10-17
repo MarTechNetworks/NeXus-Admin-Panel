@@ -39,7 +39,9 @@ export function PendingChangesBar({
           background:
             'linear-gradient(135deg, rgba(56,189,248,0.10) 0%, rgba(139,92,246,0.10) 60%, transparent 100%), rgba(13, 15, 21, 0.97)',
           border: `1px solid ${blocked ? 'rgba(239,68,68,0.45)' : 'var(--accent-line)'}`,
-          backdropFilter: 'blur(20px) saturate(160%)',
+          // No blur: the fill underneath is already 0.97 alpha, so it hid the
+          // effect completely while still making this sticky bar re-blur its
+          // backdrop on every scrolled frame.
           boxShadow: blocked
             ? '0 24px 70px rgba(0,0,0,0.55), 0 0 0 1px rgba(239,68,68,0.12)'
             : '0 24px 70px rgba(0,0,0,0.55), 0 0 40px rgba(56,189,248,0.10)',

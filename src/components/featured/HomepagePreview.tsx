@@ -108,8 +108,8 @@ function HeroCarousel({ collections }: { collections: Collection[] }) {
             type="button"
             onClick={() => setIdx((i) => (i === 0 ? n - 1 : i - 1))}
             aria-label="Previous slide"
-            className="absolute left-3 top-1/2 inline-flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full text-white transition-colors hover:bg-[rgba(10,10,15,0.8)]"
-            style={{ background: 'rgba(10,10,15,0.55)', backdropFilter: 'blur(8px)', border: `1px solid ${GRID}` }}
+            className="absolute left-3 top-1/2 inline-flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full text-white transition-colors hover:bg-[rgba(10,10,15,0.95)]"
+            style={{ background: 'rgba(10,10,15,0.82)', border: `1px solid ${GRID}` }}
           >
             <ChevronLeft className="h-5 w-5" />
           </button>
@@ -117,8 +117,8 @@ function HeroCarousel({ collections }: { collections: Collection[] }) {
             type="button"
             onClick={() => setIdx((i) => (i === n - 1 ? 0 : i + 1))}
             aria-label="Next slide"
-            className="absolute right-3 top-1/2 inline-flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full text-white transition-colors hover:bg-[rgba(10,10,15,0.8)]"
-            style={{ background: 'rgba(10,10,15,0.55)', backdropFilter: 'blur(8px)', border: `1px solid ${GRID}` }}
+            className="absolute right-3 top-1/2 inline-flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full text-white transition-colors hover:bg-[rgba(10,10,15,0.95)]"
+            style={{ background: 'rgba(10,10,15,0.82)', border: `1px solid ${GRID}` }}
           >
             <ChevronRight className="h-5 w-5" />
           </button>

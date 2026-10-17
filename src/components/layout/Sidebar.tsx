@@ -88,9 +88,6 @@ export function Sidebar() {
         mobileOpen ? 'translate-x-0' : '-translate-x-full',
         'md:translate-x-0'
       )}
-      // No backdrop-filter: nothing scrolls behind a fixed full-height rail
-      // (the main column is margin-offset past it), so the blur only ever
-      // re-blurred a static gradient — at full viewport height, every frame.
       style={{ background: 'rgba(15, 17, 24, 0.9)', borderRight: '1px solid var(--border-primary)' }}
       aria-label="Primary navigation"
     >
