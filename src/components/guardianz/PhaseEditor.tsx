@@ -330,10 +330,21 @@ function WhitelistField({
       onChange({ allowlistRaw: merged.wallets.join('\n'), unknownRootHex: undefined })
 
       const added = merged.wallets.length - before
+
+      /**
+       * Only near-misses are worth mentioning.
+       *
+       * Every other cell in a CSV — the header words, the amount and rank columns — is an
+       * "invalid entry" to the parser, and a file with five holders would otherwise report
+       * "13 lines skipped", which reads as *lost wallets*. A token long enough to have been
+       * meant as an address is the only skip anyone needs to check.
+       */
+      const nearMisses = merged.invalid.filter((e) => e.value.length >= 20).length
+
       const notes = [
         `${files.length === 1 ? files[0].name : `${files.length} files`}: +${added.toLocaleString()} new`,
         merged.duplicates > 0 ? `${merged.duplicates.toLocaleString()} duplicate${merged.duplicates === 1 ? '' : 's'} removed` : null,
-        merged.invalid.length > 0 ? `${merged.invalid.length.toLocaleString()} line${merged.invalid.length === 1 ? '' : 's'} skipped (not an address)` : null,
+        nearMisses > 0 ? `${nearMisses.toLocaleString()} skipped — not a valid address` : null,
       ].filter(Boolean)
       setLastImport(notes.join(' · '))
     } catch (e) {
