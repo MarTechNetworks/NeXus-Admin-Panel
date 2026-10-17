@@ -122,24 +122,43 @@ export const MAX_METADATA_INDEX = TOTAL_SUPPLY - 1
  * endpoint — pointed at the wrong chain, this page reports the collection as nonexistent
  * and renders "not found" with total confidence.
  *
- * ── Why the default is not api.mainnet-beta.solana.com ────────────────────────────
- * That endpoint answers a server fine and returns `{"error":{"code":403}}` to any
- * request carrying a browser `Origin` header. The CORS *preflight* passes, so it looks
- * healthy right up until a real call. This console runs in a browser, so every read and
- * every confirmation poll was being refused — step 1 landed and finalized on chain while
- * the page showed "Signature … has expired: block height exceeded", because the wallet
- * sent the transaction through its own RPC and only the polling hit the wall. A scary
- * red error on a step that actually worked, and the next step costs 0.55 SOL.
+ * ── The two fallbacks exist because no free endpoint does both jobs ───────────────
+ * The server and the browser need opposite things from an RPC here, and each of the
+ * keyless endpoints fails exactly the other one's test. Both were measured, not guessed:
  *
- * `GUARDIANZ_RPC_URL` (server) still wins where it is set — the API route and the
- * scripts read it from the environment. The browser never sees that variable (no
- * NEXT_PUBLIC_ prefix, inlined as undefined), which is exactly how it ended up on the
- * blocked endpoint, so the fallback has to be one a browser can actually use.
+ *   api.mainnet-beta.solana.com
+ *     getProgramAccounts  ✓  finds the candy machine by collection
+ *     from a browser      ✗  `{"error":{"code":403,"message":"Access forbidden"}}` on
+ *                            any request carrying an Origin header — and the CORS
+ *                            *preflight* passes, so it looks healthy until a real call
+ *
+ *   solana.leorpc.com
+ *     from a browser      ✓
+ *     getProgramAccounts  ✗  `-32602 Too many accounts requested`
+ *
+ * Both failures have already cost an evening. On the browser side, step 1 landed and
+ * finalized while the console showed "Signature … has expired: block height exceeded" —
+ * the wallet had sent the transaction through its own RPC and only the confirmation
+ * polling hit the 403. On the server side, `findCandyMachine` came back empty and the
+ * status endpoint reported "no candy machine exists" for one that held 6,216 config
+ * lines. Same page, same constant, opposite cause.
+ *
+ * So the fallback is chosen by where the code is running. `typeof window` is evaluated
+ * once per bundle, and Next compiles the server and client bundles separately, so each
+ * side is built with its own default baked in.
+ *
+ * An explicit value always wins: `GUARDIANZ_RPC_URL` for the API route and the scripts
+ * (server-only, so a keyed URL is safe there — that is how production is configured),
+ * `NEXT_PUBLIC_GUARDIANZ_RPC_URL` when the browser needs overriding too. Never put a
+ * keyed URL in the NEXT_PUBLIC_ one; it is inlined into the bundle every visitor reads.
  */
+const SERVER_RPC_FALLBACK = 'https://api.mainnet-beta.solana.com'
+const BROWSER_RPC_FALLBACK = 'https://solana.leorpc.com/?api_key=FREE'
+
 export const GUARDIANZ_RPC_URL =
   process.env.GUARDIANZ_RPC_URL ??
   process.env.NEXT_PUBLIC_GUARDIANZ_RPC_URL ??
-  'https://solana.leorpc.com/?api_key=FREE'
+  (typeof window === 'undefined' ? SERVER_RPC_FALLBACK : BROWSER_RPC_FALLBACK)
 
 /**
  * Socials for the mint page, per MarTech (2026-09-11): the collection's X account, the
