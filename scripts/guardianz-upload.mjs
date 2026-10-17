@@ -45,8 +45,22 @@ if (!KEYPAIR) {
 
 const snapshot = JSON.parse(readFileSync(resolve(HERE, '../src/lib/guardianz/data/snapshot.json'), 'utf8'))
 const ENTRIES = snapshot.entries
-const BATCH = 40
-const WAVE = 10
+/** Config lines per transaction. 40 is what fits in 1,232 bytes alongside the rest. */
+const BATCH = Number(process.env.GUARDIANZ_UPLOAD_BATCH ?? 40)
+
+/**
+ * Transactions sent at once.
+ *
+ * Was a flat 10, which a free-tier RPC answers with a wall of 429s: the first run got
+ * 240 of them, the SDK's backoff could not keep up, and the script died at 4,760 of
+ * 6,216. Resuming costs nothing (lines are written by index, so a re-run starts at
+ * `itemsLoaded`), but finishing in one pass is better than discovering the limit twice.
+ * Lower it further on a free key; raise it on a paid one.
+ */
+const WAVE = Number(process.env.GUARDIANZ_UPLOAD_WAVE ?? 3)
+
+/** Pause between waves. Nothing is racing; the RPC's rate window is the only clock. */
+const WAVE_PAUSE_MS = Number(process.env.GUARDIANZ_UPLOAD_PAUSE_MS ?? 400)
 
 const umi = createUmi(RPC, 'confirmed').use(mplCore()).use(mplCandyMachine())
 const kp = umi.eddsa.createKeypairFromSecretKey(Uint8Array.from(JSON.parse(readFileSync(KEYPAIR, 'utf8'))))
@@ -96,7 +110,10 @@ async function main() {
           .sendAndConfirm(umi, { confirm: { commitment: 'confirmed' } }),
       ),
     )
-    process.stdout.write(`  ${Math.min(w + WAVE, batches.length)}/${batches.length}\r`)
+    process.stdout.write(`  ${Math.min(w + WAVE, batches.length)}/${batches.length}\n`)
+    if (WAVE_PAUSE_MS > 0 && w + WAVE < batches.length) {
+      await new Promise(r => setTimeout(r, WAVE_PAUSE_MS))
+    }
   }
   process.stdout.write('\n')
 
