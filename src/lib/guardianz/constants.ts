@@ -118,18 +118,28 @@ export const MAX_METADATA_INDEX = TOTAL_SUPPLY - 1
 /**
  * Mainnet RPC for this page only.
  *
- * The rest of the site reads its endpoint from `/api/solana/config`, which points at
- * devnet. GuardianZ is a real mainnet collection, so it needs its own endpoint and must
- * never inherit the configured one — a devnet connection here would report the
- * collection as nonexistent and the page would confidently render "not found".
+ * GuardianZ is a real mainnet collection and must never inherit the configured cluster
+ * endpoint — pointed at the wrong chain, this page reports the collection as nonexistent
+ * and renders "not found" with total confidence.
  *
- * The public endpoint works but is rate-limited; set `GUARDIANZ_RPC_URL` to a paid one
- * before this page sees traffic.
+ * ── Why the default is not api.mainnet-beta.solana.com ────────────────────────────
+ * That endpoint answers a server fine and returns `{"error":{"code":403}}` to any
+ * request carrying a browser `Origin` header. The CORS *preflight* passes, so it looks
+ * healthy right up until a real call. This console runs in a browser, so every read and
+ * every confirmation poll was being refused — step 1 landed and finalized on chain while
+ * the page showed "Signature … has expired: block height exceeded", because the wallet
+ * sent the transaction through its own RPC and only the polling hit the wall. A scary
+ * red error on a step that actually worked, and the next step costs 0.55 SOL.
+ *
+ * `GUARDIANZ_RPC_URL` (server) still wins where it is set — the API route and the
+ * scripts read it from the environment. The browser never sees that variable (no
+ * NEXT_PUBLIC_ prefix, inlined as undefined), which is exactly how it ended up on the
+ * blocked endpoint, so the fallback has to be one a browser can actually use.
  */
 export const GUARDIANZ_RPC_URL =
   process.env.GUARDIANZ_RPC_URL ??
   process.env.NEXT_PUBLIC_GUARDIANZ_RPC_URL ??
-  'https://api.mainnet-beta.solana.com'
+  'https://solana.leorpc.com/?api_key=FREE'
 
 /**
  * Socials for the mint page, per MarTech (2026-09-11): the collection's X account, the
