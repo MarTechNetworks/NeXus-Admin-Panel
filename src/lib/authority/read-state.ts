@@ -56,9 +56,13 @@ export async function loadAuthoritySnapshot(
   const registryPda = deriveRegistryPda(programId)
   const platformFeeConfigPda = derivePlatformFeeConfigPda(programId)
 
+  // fetchNullable already answers "no such account" with null, so anything it *throws* is the RPC
+  // or the layout failing — never an empty chain. Swallowing that to null made a dead endpoint
+  // indistinguishable from a program that was never set up, and the console said so in as many
+  // words while the registry sat on chain. Let it reject; the page has an error state and a retry.
   const [registryRaw, feeRaw] = await Promise.all([
-    ns.collectionRegistry.fetchNullable(registryPda).catch(() => null),
-    ns.platformFeeConfig.fetchNullable(platformFeeConfigPda).catch(() => null),
+    ns.collectionRegistry.fetchNullable(registryPda),
+    ns.platformFeeConfig.fetchNullable(platformFeeConfigPda),
   ])
 
   const registry: RegistrySnapshot | null = registryRaw

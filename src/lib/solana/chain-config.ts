@@ -6,10 +6,16 @@
  * in this app; switching networks is a backend env change.
  */
 import { Connection } from '@solana/web3.js'
+import { configureRpcPool, rpcPoolFetch } from './rpc-pool'
 
 export interface ChainConfig {
   network: 'localnet' | 'devnet' | 'testnet' | 'mainnet-beta'
+  /** The cluster's canonical URL. Identity only — the bytes go over `rpcUrls`. */
   rpcUrl: string
+  /** Browser-usable endpoints, best first, as probed by the backend's pool. */
+  rpcUrls?: string[]
+  /** The subset of `rpcUrls` proven to accept a transaction. */
+  sendRpcUrls?: string[]
   commitment: 'processed' | 'confirmed' | 'finalized'
   programId: string
   mplCoreProgramId: string
@@ -58,18 +64,26 @@ async function fetchChainConfig(): Promise<ChainConfig> {
   if (!json?.success || !json?.data) {
     throw new Error('Unexpected /api/solana/config response shape')
   }
-  return json.data as ChainConfig
+  const cfg = json.data as ChainConfig
+  // Hand the endpoint list to the pool before anything builds a Connection from this config.
+  configureRpcPool(cfg)
+  return cfg
 }
 
 // One Connection per rpcUrl for the tab's lifetime — creating a new Connection
 // per render would drop the RPC's internal request coalescing on the floor.
 const connections = new Map<string, Connection>()
 
+/**
+ * `cfg.rpcUrl` names the cluster; `rpcPoolFetch` decides which endpoint the bytes go to. The
+ * canonical URL is not necessarily reachable from a browser at all — Solana's own
+ * api.mainnet-beta endpoint answers this backend and 403s anything with an `origin` header.
+ */
 export function getConnection(cfg: ChainConfig): Connection {
   const key = `${cfg.rpcUrl}|${cfg.commitment}`
   let conn = connections.get(key)
   if (!conn) {
-    conn = new Connection(cfg.rpcUrl, cfg.commitment)
+    conn = new Connection(cfg.rpcUrl, { commitment: cfg.commitment, fetch: rpcPoolFetch })
     connections.set(key, conn)
   }
   return conn
