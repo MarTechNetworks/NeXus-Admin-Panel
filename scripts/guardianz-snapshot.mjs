@@ -20,10 +20,29 @@
  *   AssetV1 layout: u8 key | [32] owner | u8 ua_tag | [32] ua | str name | str uri
  *   ua_tag 2 = Collection, so the filter is byte 0x02 followed by the collection key.
  *
+ * ── Where a display name comes from ──────────────────────────────────────────────
+ * Each metadata file declares its own name: `0.json` is `{"name":"2030",…}`. That
+ * pairing *is* the collection — image, traits and number were fixed together when the
+ * art was generated. So an unminted file's name is read out of that file and nowhere
+ * else.
+ *
+ * This script used to pair the sorted unminted files with the sorted *unused numbers*,
+ * assuming the leftovers on each side lined up. They do not: the reveal was shuffled, so
+ * leftover file 1405 and leftover number "50" have nothing to do with each other. The
+ * result was 6,214 entries whose on-chain name contradicted the name inside the very
+ * JSON the asset points at, with the range shifted on top of it (a "#0" that does not
+ * exist in the collection, and no "#7575"). Nothing collided with the 1,361 already
+ * minted, so it would not have failed — it would have quietly shipped 6,214 NFTs whose
+ * number belonged to someone else's artwork.
+ *
+ * Names now come from the files, and `main()` proves the rule against all 1,361
+ * already-minted assets before writing anything.
+ *
  * Usage:  node scripts/guardianz-snapshot.mjs [--no-shuffle]
+ *         GUARDIANZ_METADATA_DIR=D:/backups/guardianz/metadata node scripts/guardianz-snapshot.mjs
  * Output: src/lib/guardianz/data/snapshot.json
  */
-import { writeFile, mkdir } from 'node:fs/promises'
+import { writeFile, mkdir, readFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createHash } from 'node:crypto'
@@ -36,6 +55,22 @@ const MPL_CORE = 'CoREENxT6tW1HoK8ypY1SxRMZTcVPm7R94rH4PZNhX7d'
 const TOTAL_SUPPLY = 7575
 const RPC = process.env.GUARDIANZ_RPC_URL ?? 'https://api.mainnet-beta.solana.com'
 const SHUFFLE = !process.argv.includes('--no-shuffle')
+
+/**
+ * Where to read the 7,575 names from.
+ *
+ * `GUARDIANZ_METADATA_DIR` points at a local copy of the metadata folder — the
+ * off-chain backup at D:/backups/guardianz/metadata is exactly that, verified
+ * byte-for-byte against the gateway. Using it turns 7,575 HTTP round-trips into 7,575
+ * local reads, which is the difference between a minute and a second, and works when
+ * pinit.io is throttling or gone. Without it the files are fetched from the gateway.
+ */
+const METADATA_DIR = process.env.GUARDIANZ_METADATA_DIR ?? ''
+const METADATA_BASE =
+  process.env.GUARDIANZ_METADATA_BASE ??
+  'https://gateway.pinit.io/ipfs/QmQ83S7wpaUikQW3mj1EesMcharfnfKCJ72SReyEQ22FnA'
+/** Parallel gateway reads. Enough to be quick, few enough to stay polite. */
+const FETCH_CONCURRENCY = 24
 
 const B58 = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz'
 
@@ -112,6 +147,38 @@ function decodeAsset(data) {
 }
 
 /**
+ * Every file's declared name, indexed by file number: `names[0] === '2030'`.
+ *
+ * The value used is the JSON's own `name` field — the number the art generator wrote
+ * alongside that image's traits. Nothing is derived from the file index, because the
+ * reveal was shuffled and the two are unrelated.
+ */
+async function readNames() {
+  const names = new Array(TOTAL_SUPPLY)
+
+  if (METADATA_DIR) {
+    console.log(`reading ${TOTAL_SUPPLY} names from ${METADATA_DIR}`)
+    for (let i = 0; i < TOTAL_SUPPLY; i++) {
+      names[i] = String(JSON.parse(await readFile(resolve(METADATA_DIR, `${i}.json`), 'utf8')).name)
+    }
+    return names
+  }
+
+  console.log(`fetching ${TOTAL_SUPPLY} names from ${METADATA_BASE} (${FETCH_CONCURRENCY} at a time)`)
+  let cursor = 0
+  await Promise.all(
+    Array.from({ length: FETCH_CONCURRENCY }, async () => {
+      for (let i = cursor++; i < TOTAL_SUPPLY; i = cursor++) {
+        const res = await fetch(`${METADATA_BASE}/${i}.json`)
+        if (!res.ok) throw new Error(`${i}.json → HTTP ${res.status}`)
+        names[i] = String((await res.json()).name)
+      }
+    }),
+  )
+  return names
+}
+
+/**
  * Deterministic shuffle.
  *
  * The program hands entries out in pool order, so the pool must be shuffled before it is
@@ -163,29 +230,56 @@ async function main() {
     else minted.set(idx, name)
   }
 
-  // The names still available are the ones no minted asset claimed. Both halves of each
-  // pair matter: the program needs the file index for the URI *and* the display name,
-  // because the shuffle means neither implies the other.
   const mintedNames = new Set(minted.values())
   const unmintedIndices = []
   for (let i = 0; i < TOTAL_SUPPLY; i++) if (!minted.has(i)) unmintedIndices.push(i)
 
-  const availableNames = []
-  for (let n = 0; n < TOTAL_SUPPLY; n++) if (!mintedNames.has(String(n))) availableNames.push(n)
+  const nameByFile = await readNames()
 
-  if (availableNames.length !== unmintedIndices.length) {
-    console.log(
-      `⚠ ${unmintedIndices.length} unminted files but ${availableNames.length} unused names — ` +
-        'the original reveal was not a clean 1:1 mapping. Pairing by order.',
+  // Prove the rule before trusting it.
+  //
+  // Every asset LaunchMyNFT minted should carry the name declared inside the JSON it
+  // points at. If that holds for all 1,361, then it is demonstrably the rule the
+  // original mint followed, and applying it to the remaining 6,214 continues the same
+  // collection instead of inventing a second numbering. If it does not hold, the
+  // assumption behind this whole file is wrong and a snapshot built on it must not
+  // reach the chain — so this throws rather than warns.
+  const nameMismatches = []
+  for (const [fileIndex, onChainName] of minted) {
+    if (nameByFile[fileIndex] !== onChainName) {
+      nameMismatches.push({ fileIndex, onChain: onChainName, json: nameByFile[fileIndex] })
+    }
+  }
+  if (nameMismatches.length > 0) {
+    console.log(`✗ ${nameMismatches.length} of ${minted.size} minted assets do not carry their own JSON's name:`)
+    for (const m of nameMismatches.slice(0, 10)) {
+      console.log(`   ${m.fileIndex}.json → on-chain "${m.onChain}", json "${m.json}"`)
+    }
+    throw new Error('the name rule does not hold on the minted set — refusing to write a snapshot')
+  }
+  console.log(`✓ all ${minted.size} minted assets carry their own JSON's name`)
+
+  // Each unminted file keeps the name its own JSON declares. Then shuffle the pairs so
+  // the pool is not in file order — belt and braces, since the candy machine also picks
+  // at random, but a shuffled pool means even the upload order reveals nothing.
+  let entries = unmintedIndices.map(fileIndex => ({ fileIndex, name: nameByFile[fileIndex] }))
+
+  // Three ways this could still be wrong, each fatal on-chain and silent off it.
+  const nameless = entries.filter(e => e.name == null || e.name === '')
+  if (nameless.length > 0) {
+    throw new Error(`${nameless.length} unminted files declare no name (first: ${nameless[0].fileIndex}.json)`)
+  }
+  const distinct = new Set(entries.map(e => e.name)).size
+  if (distinct !== entries.length) {
+    throw new Error(`${entries.length - distinct} duplicate names in the pool — two files declare the same number`)
+  }
+  const clashes = entries.filter(e => mintedNames.has(e.name))
+  if (clashes.length > 0) {
+    throw new Error(
+      `${clashes.length} pool names are already minted (first "${clashes[0].name}") — would mint a duplicate number`,
     )
   }
 
-  // Pair each surviving file with a surviving name, then shuffle the pairs so the mint
-  // does not reveal in file order.
-  let entries = unmintedIndices.map((fileIndex, i) => ({
-    fileIndex,
-    name: availableNames[i] ?? fileIndex,
-  }))
   if (SHUFFLE) entries = shuffle(entries, COLLECTION)
 
   const snapshot = {
@@ -196,6 +290,9 @@ async function main() {
     mintedCount: minted.size,
     unmintedCount: entries.length,
     shuffled: SHUFFLE,
+    /** Where each entry's name came from, and that it was checked against the minted set. */
+    nameSource: METADATA_DIR || METADATA_BASE,
+    nameRuleVerifiedAgainstMinted: minted.size,
     /** What `load_chunk` uploads, in order. */
     entries,
     anomalies: { unparsed, duplicates },
