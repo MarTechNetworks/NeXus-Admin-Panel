@@ -23,6 +23,7 @@
  * but it is his call to make, not a step in our flow.
  */
 import {
+  addCollectionPlugin,
   revokeCollectionPluginAuthority,
   updateCollectionPlugin,
 } from '@metaplex-foundation/mpl-core'
@@ -128,6 +129,16 @@ export interface RoyaltySplit {
   creators: { address: string; percentage: number }[]
 }
 
+/** True when the string is a Solana address — the same parse the instruction will do. */
+export function isValidAddress(address: string): boolean {
+  try {
+    publicKey(address)
+    return true
+  } catch {
+    return false
+  }
+}
+
 /** Throws with a human message if Core would reject the split, before the wallet opens. */
 export function validateRoyaltySplit(split: RoyaltySplit): void {
   if (!Number.isInteger(split.basisPoints) || split.basisPoints < 0 || split.basisPoints > 10_000) {
@@ -161,18 +172,36 @@ export function validateRoyaltySplit(split: RoyaltySplit): void {
  * the UpdateDelegate LaunchMyNFT holds, so it does not wait on step 1.
  *
  * `ruleSet` stays `None`, as it is today: no program allow/deny list on transfers.
+ *
+ * Adding a wallet grows the account, so the connected wallet (the payer) covers a few
+ * thousand lamports of extra rent on top of the fee. Removing one shrinks it back.
  */
-export async function updateRoyaltySplit(umi: Umi, split: RoyaltySplit): Promise<ActionResult> {
+export async function updateRoyaltySplit(
+  umi: Umi,
+  split: RoyaltySplit,
+  options: {
+    /**
+     * Pass `false` when the collection has no Royalties plugin at all — then it is
+     * added rather than updated, because `updateCollectionPlugin` fails on a plugin
+     * that is not there. GuardianZ has carried one since its original mint, so the
+     * default is the update path; the flag just stops the editor being the thing that
+     * breaks on a collection that never had royalties.
+     */
+    pluginExists?: boolean
+  } = {},
+): Promise<ActionResult> {
   validateRoyaltySplit(split)
-  const { signature } = await updateCollectionPlugin(umi, {
-    collection: COLLECTION,
-    plugin: {
-      type: 'Royalties',
-      basisPoints: split.basisPoints,
-      creators: split.creators.map((c) => ({ address: publicKey(c.address), percentage: c.percentage })),
-      ruleSet: { type: 'None' },
-    },
-  }).sendAndConfirm(umi)
+  const plugin = {
+    type: 'Royalties' as const,
+    basisPoints: split.basisPoints,
+    creators: split.creators.map((c) => ({ address: publicKey(c.address), percentage: c.percentage })),
+    ruleSet: { type: 'None' as const },
+  }
+  const builder =
+    options.pluginExists === false
+      ? addCollectionPlugin(umi, { collection: COLLECTION, plugin })
+      : updateCollectionPlugin(umi, { collection: COLLECTION, plugin })
+  const { signature } = await builder.sendAndConfirm(umi)
   return { signature: toBase58(signature) }
 }
 

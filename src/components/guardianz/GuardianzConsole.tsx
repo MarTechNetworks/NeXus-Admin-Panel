@@ -38,8 +38,11 @@ import {
   KeyRound,
   Loader2,
   Percent,
+  Plus,
+  RotateCcw,
   Shield,
   Snowflake,
+  Trash2,
 } from 'lucide-react'
 
 import { Button } from '@/components/ui/Button'
@@ -59,6 +62,7 @@ import { CREATOR_WALLET, GUARDIANZ_COLLECTION, LMN_CONFIG_PDA, ROYALTY_BPS } fro
 import { OPS_WALLET } from '@/lib/guardianz/candy-machine'
 import {
   createCandyMachine,
+  isValidAddress,
   reclaimUpdateDelegate,
   updateRoyaltySplit,
   validateRoyaltySplit,
@@ -67,12 +71,13 @@ import {
 import type { MigrationStatus } from '@/lib/guardianz/migration-status'
 import { walletUmi } from '@/lib/guardianz/umi'
 
-type StepId = 'reclaim' | 'create' | 'royalties'
+type StepId = 'reclaim' | 'create'
+/** The royalty split is signed from its own card, so it locks the buttons but is not a step. */
+type ActionId = StepId | 'royalties'
 
 const SIGNED_LABEL: Record<StepId, string> = {
   reclaim: 'Reclaimed',
   create: 'Candy machine created',
-  royalties: 'Royalty split updated',
 }
 
 interface SignedEntry {
@@ -84,6 +89,12 @@ interface SignedEntry {
 const tx = (sig: string) => `https://solscan.io/tx/${sig}`
 const acct = (a: string) => `https://solscan.io/account/${a}`
 
+/** Wallet rejections read as rejections; everything else keeps its first line. */
+function friendlyError(e: unknown): string {
+  const msg = e instanceof Error ? e.message : String(e)
+  return /reject|denied|cancel/i.test(msg) ? 'Cancelled in the wallet.' : msg.split('\n')[0].slice(0, 300)
+}
+
 async function fetchStatus(): Promise<MigrationStatus> {
   const res = await fetch('/api/guardianz/status', { cache: 'no-store' })
   if (!res.ok) throw new Error(`status ${res.status}`)
@@ -94,9 +105,13 @@ export function GuardianzConsole() {
   const wallet = useWallet()
   const status = useQuery({ queryKey: ['guardianz-status'], queryFn: fetchStatus, refetchInterval: 30_000 })
 
-  const [busy, setBusy] = useState<StepId | null>(null)
+  const [busy, setBusy] = useState<ActionId | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [signed, setSigned] = useState<SignedEntry[]>([])
+  // Royalty outcomes live beside the royalty card, not in the steps log — an error from
+  // a save belongs under the form that caused it, three sections away from the steps.
+  const [royaltyError, setRoyaltyError] = useState<string | null>(null)
+  const [royaltyTx, setRoyaltyTx] = useState<string | null>(null)
 
   const s = status.data
   const col = s?.collection ?? null
@@ -114,7 +129,10 @@ export function GuardianzConsole() {
 
   // Switching to a different account mid-flow is exactly how the wrong key signs;
   // clear any stale error the moment the address changes.
-  useEffect(() => setError(null), [wallet.address])
+  useEffect(() => {
+    setError(null)
+    setRoyaltyError(null)
+  }, [wallet.address])
 
   const reclaimDone = !!col && !col.updateDelegateHeldByLmn
   const createDone = !!s?.candyMachine
@@ -129,7 +147,7 @@ export function GuardianzConsole() {
           : null
 
   const run = useCallback(
-    async (id: StepId, split?: RoyaltySplit) => {
+    async (id: StepId) => {
       if (!isCreator || !wallet.publicKey) return
       setBusy(id)
       setError(null)
@@ -138,23 +156,46 @@ export function GuardianzConsole() {
         if (id === 'reclaim') {
           const { signature } = await reclaimUpdateDelegate(umi)
           setSigned((l) => [...l, { step: id, signature }])
-        } else if (id === 'royalties') {
-          if (!split) return
-          const { signature } = await updateRoyaltySplit(umi, split)
-          setSigned((l) => [...l, { step: id, signature }])
         } else {
           const { signature, candyMachine } = await createCandyMachine(umi, { itemsAvailable: poolSize })
           setSigned((l) => [...l, { step: id, signature, candyMachine }])
         }
         await status.refetch()
       } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e)
-        setError(/reject|denied|cancel/i.test(msg) ? 'Cancelled in the wallet.' : msg.split('\n')[0].slice(0, 300))
+        setError(friendlyError(e))
       } finally {
         setBusy(null)
       }
     },
     [isCreator, wallet, poolSize, status],
+  )
+
+  /**
+   * Save the royalty split. Its own path rather than a branch of `run` because it is the
+   * one action here that is editable, repeatable and reported in place: the signature
+   * and any failure render under the form, and the refetch that follows is what makes
+   * the card re-read itself from the chain instead of trusting what was just typed.
+   */
+  const saveRoyalties = useCallback(
+    async (split: RoyaltySplit) => {
+      if (!isCreator || !wallet.publicKey) return
+      setBusy('royalties')
+      setRoyaltyError(null)
+      setRoyaltyTx(null)
+      try {
+        const umi = walletUmi(wallet)
+        const { signature } = await updateRoyaltySplit(umi, split, {
+          pluginExists: col?.royaltyBps != null,
+        })
+        setRoyaltyTx(signature)
+        await status.refetch()
+      } catch (e) {
+        setRoyaltyError(friendlyError(e))
+      } finally {
+        setBusy(null)
+      }
+    },
+    [isCreator, wallet, col?.royaltyBps, status],
   )
 
   const walletTone = useMemo(() => {
@@ -359,13 +400,44 @@ export function GuardianzConsole() {
             {status.isLoading ? 'Reading mainnet…' : 'Collection unreadable.'}
           </p>
         ) : (
-          <RoyaltySplitCard
-            currentBps={col.royaltyBps}
-            currentCreators={col.royaltyCreators}
-            busy={busy === 'royalties'}
-            disabled={!isCreator || busy !== null}
-            onSign={(split) => run('royalties', split)}
-          />
+          <>
+            {/* Keyed on the chain's own split: when the chain changes — our save, or
+                someone else's — the editor is rebuilt from it rather than left showing a
+                draft of a state that no longer exists. Identical state, same key, no
+                remount, so a poll mid-edit does not wipe what is being typed. */}
+            <RoyaltySplitCard
+              key={royaltyChainKey(col.royaltyBps, col.royaltyCreators)}
+              currentBps={col.royaltyBps}
+              currentCreators={col.royaltyCreators}
+              busy={busy === 'royalties'}
+              locked={busy !== null && busy !== 'royalties'}
+              blocked={
+                !wallet.address
+                  ? 'Connect the creator wallet to save.'
+                  : !isCreator
+                    ? `Only ${shortAddress(CREATOR_WALLET, 4, 4)} can change the royalty — switch to it in the wallet.`
+                    : null
+              }
+              onSave={saveRoyalties}
+            />
+
+            {royaltyError && (
+              <div className="mt-4">
+                <Callout level="danger">{royaltyError}</Callout>
+              </div>
+            )}
+
+            {royaltyTx && !royaltyError && (
+              <div className="mt-4">
+                <Callout level="success">
+                  Royalties updated on every GuardianZ NFT.{' '}
+                  <a href={tx(royaltyTx)} target="_blank" rel="noreferrer" className="underline underline-offset-2">
+                    {shortAddress(royaltyTx, 8, 8)}
+                  </a>
+                </Callout>
+              </div>
+            )}
+          </>
         )}
       </Section>
 
@@ -396,39 +468,77 @@ export function GuardianzConsole() {
 
 type RoyaltyCreator = RoyaltySplit['creators'][number]
 
+/** A row carries a key so React tracks it across add/remove instead of by position. */
+interface RoyaltyRow extends RoyaltyCreator {
+  key: number
+}
+
+let rowKeySeq = 0
+const newRow = (address: string, percentage: number): RoyaltyRow => ({
+  key: ++rowKeySeq,
+  address,
+  percentage,
+})
+
+/**
+ * How many wallets the editor offers. Core has no limit of its own — each one is 33
+ * bytes on the collection account, paid in rent by whoever signs — but a royalty split
+ * is a payout agreement, and past a handful the form is the wrong tool for it.
+ */
+const MAX_ROYALTY_WALLETS = 5
+
+/** 100 across n wallets, the remainder to the first: 34/33/33, not 33/33/33. */
+const evenShares = (n: number): number[] => {
+  const base = Math.floor(100 / n)
+  return Array.from({ length: n }, (_, i) => (i === 0 ? 100 - base * (n - 1) : base))
+}
+
+const rowsFrom = (creators: RoyaltyCreator[]): RoyaltyRow[] =>
+  creators.length > 0
+    ? creators.map((c) => newRow(c.address, c.percentage))
+    : [newRow(CREATOR_WALLET, 100)]
+
+/** The on-chain split's identity — the editor is rebuilt whenever this string changes. */
+const royaltyChainKey = (bps: number | null, creators: RoyaltyCreator[]) =>
+  `${bps ?? 'none'}|${creators.map((c) => `${c.address}:${c.percentage}`).join(',')}`
+
 const sameSplit = (bps: number | null, a: RoyaltyCreator[], b: RoyaltySplit) =>
   bps === b.basisPoints &&
   a.length === b.creators.length &&
   a.every((c, i) => c.address === b.creators[i].address && c.percentage === b.creators[i].percentage)
 
 /**
- * Two wallets and their shares of the royalty. The shares are tied together — editing
- * one sets the other to the remainder — because Core rejects anything that is not
- * exactly 100%, and a form that lets you type 60 + 50 only to fail in the wallet is
- * worse than one that cannot.
+ * The royalty and the wallets it is paid to — one to five of them, as they are on chain.
+ *
+ * It opens on the chain's own split rather than a guessed shape, which is the whole
+ * difference between this and what it replaced: a card that always drew two 50/50 rows
+ * showed a second wallet that does not exist, started invalid ("not a valid address:
+ * (empty)") and so could never be saved, and quietly proposed halving a royalty that is
+ * actually paid 100% to one wallet.
+ *
+ * Shares are free to type and validated as a set, because the tied two-row version could
+ * not express three wallets at all. The total is shown next to them, Core rejects
+ * anything but exactly 100%, and `validateRoyaltySplit` says so before the wallet opens.
  */
 function RoyaltySplitCard({
   currentBps,
   currentCreators,
   busy,
-  disabled,
-  onSign,
+  locked,
+  blocked,
+  onSave,
 }: {
   currentBps: number | null
   currentCreators: RoyaltyCreator[]
   busy: boolean
-  disabled: boolean
-  onSign: (split: RoyaltySplit) => void
+  /** Another signature is in flight — edit freely, but do not open a second wallet prompt. */
+  locked: boolean
+  /** Why this wallet cannot sign, if it cannot. Null means saving is allowed. */
+  blocked: string | null
+  onSave: (split: RoyaltySplit) => void
 }) {
   const [bps, setBps] = useState(currentBps ?? ROYALTY_BPS)
-  const [rows, setRows] = useState<RoyaltyCreator[]>(() =>
-    currentCreators.length === 2
-      ? currentCreators
-      : [
-          { address: currentCreators[0]?.address ?? CREATOR_WALLET, percentage: 50 },
-          { address: '', percentage: 50 },
-        ],
-  )
+  const [rows, setRows] = useState<RoyaltyRow[]>(() => rowsFrom(currentCreators))
 
   const split: RoyaltySplit = {
     basisPoints: bps,
@@ -441,76 +551,191 @@ function RoyaltySplitCard({
     invalid = e instanceof Error ? e.message : String(e)
   }
   const unchanged = sameSplit(currentBps, currentCreators, split)
+  const total = rows.reduce((n, r) => n + r.percentage, 0)
 
-  const setAddress = (i: number, address: string) =>
-    setRows((r) => r.map((row, j) => (j === i ? { ...row, address } : row)))
-  const setShare = (i: number, pct: number) => {
-    const p = Math.min(99, Math.max(1, Math.round(pct)))
-    setRows((r) => r.map((row, j) => ({ ...row, percentage: j === i ? p : 100 - p })))
+  const setAddress = (key: number, address: string) =>
+    setRows((r) => r.map((row) => (row.key === key ? { ...row, address } : row)))
+
+  const setShare = (key: number, pct: number) => {
+    const p = Math.min(100, Math.max(0, Math.round(pct)))
+    setRows((r) => r.map((row) => (row.key === key ? { ...row, percentage: p } : row)))
+  }
+
+  /** A new wallet takes what is unallocated; when nothing is, everyone splits evenly. */
+  const addRow = () =>
+    setRows((r) => {
+      if (r.length >= MAX_ROYALTY_WALLETS) return r
+      const rest = 100 - r.reduce((n, x) => n + x.percentage, 0)
+      if (rest > 0) return [...r, newRow('', rest)]
+      const shares = evenShares(r.length + 1)
+      return [...r, newRow('', 0)].map((row, i) => ({ ...row, percentage: shares[i] }))
+    })
+
+  /** The share of a removed wallet goes to the first one, so the total stays at 100. */
+  const removeRow = (key: number) =>
+    setRows((r) => {
+      if (r.length <= 1) return r
+      const freed = r.find((x) => x.key === key)?.percentage ?? 0
+      return r
+        .filter((x) => x.key !== key)
+        .map((row, i) => (i === 0 ? { ...row, percentage: Math.min(100, row.percentage + freed) } : row))
+    })
+
+  const spreadEvenly = () =>
+    setRows((r) => {
+      const shares = evenShares(r.length)
+      return r.map((row, i) => ({ ...row, percentage: shares[i] }))
+    })
+
+  const resetToChain = () => {
+    setBps(currentBps ?? ROYALTY_BPS)
+    setRows(rowsFrom(currentCreators))
   }
 
   return (
     <div className="space-y-4">
       <div className="panel-subtle px-4 py-3 text-xs" style={{ color: 'var(--text-secondary)' }}>
         <span style={{ color: 'var(--text-muted)' }}>On-chain now: </span>
-        {currentBps != null ? `${currentBps / 100}%` : 'no royalty'}
-        {currentCreators.map((c) => (
-          <span key={c.address} className="ml-2 font-mono" title={c.address}>
-            {shortAddress(c.address, 4, 4)} · {c.percentage}%
-          </span>
-        ))}
+        {currentBps == null ? (
+          'no royalty plugin on the collection'
+        ) : (
+          <>
+            <strong>{currentBps / 100}%</strong>
+            {currentCreators.length === 0 ? (
+              <span className="ml-2" style={{ color: 'var(--text-muted)' }}>
+                to nobody — no wallets listed
+              </span>
+            ) : (
+              currentCreators.map((c) => (
+                <span key={c.address} className="ml-2 font-mono" title={c.address}>
+                  {shortAddress(c.address, 4, 4)} · {c.percentage}%
+                </span>
+              ))
+            )}
+          </>
+        )}
       </div>
 
       <div className="flex flex-wrap items-center gap-3">
         <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>
           Total royalty
         </span>
-        <PercentInput value={bps} onChange={setBps} max={10_000} disabled={disabled} />
+        <PercentInput value={bps} onChange={setBps} max={10_000} disabled={busy} />
+        <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+          charged on every secondary sale, then shared between the wallets below
+        </span>
       </div>
 
       <div className="space-y-2">
-        {rows.map((row, i) => (
-          <div key={i} className="flex flex-wrap items-center gap-3">
-            <span className="w-16 text-xs" style={{ color: 'var(--text-muted)' }}>
-              Wallet {i + 1}
-            </span>
-            <TextInput
-              value={row.address}
-              onChange={(v) => setAddress(i, v)}
-              placeholder="Solana address"
-              mono
-              disabled={disabled}
-              className="min-w-0 flex-1"
-            />
-            <PercentInput
-              value={row.percentage * 100}
-              onChange={(v) => setShare(i, v / 100)}
-              max={9_900}
-              disabled={disabled}
-            />
-          </div>
-        ))}
+        {rows.map((row, i) => {
+          const badAddress = row.address.trim().length > 0 && !isValidAddress(row.address.trim())
+          return (
+            <div key={row.key} className="flex flex-wrap items-center gap-3">
+              <span className="w-16 shrink-0 text-xs" style={{ color: 'var(--text-muted)' }}>
+                Wallet {i + 1}
+              </span>
+              <TextInput
+                value={row.address}
+                onChange={(v) => setAddress(row.key, v)}
+                placeholder="Solana address"
+                mono
+                invalid={badAddress}
+                disabled={busy}
+                className="min-w-0 flex-1"
+              />
+              <PercentInput
+                value={row.percentage * 100}
+                onChange={(v) => setShare(row.key, v / 100)}
+                max={10_000}
+                disabled={busy}
+              />
+              <button
+                type="button"
+                aria-label={`Remove wallet ${i + 1}`}
+                title={rows.length === 1 ? 'A royalty needs at least one wallet' : 'Remove this wallet'}
+                disabled={busy || rows.length === 1}
+                onClick={() => removeRow(row.key)}
+                className="rounded-md p-1.5 transition-colors disabled:opacity-30"
+                style={{ color: 'var(--text-tertiary)' }}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          )
+        })}
       </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-[11px]" style={{ color: invalid ? 'var(--accent-warning)' : 'var(--text-muted)' }}>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          variant="secondary"
+          size="sm"
+          leftIcon={<Plus className="h-3.5 w-3.5" />}
+          disabled={busy || rows.length >= MAX_ROYALTY_WALLETS}
+          title={rows.length >= MAX_ROYALTY_WALLETS ? `Up to ${MAX_ROYALTY_WALLETS} wallets` : undefined}
+          onClick={addRow}
+        >
+          Add wallet
+        </Button>
+        {rows.length > 1 && (
+          <Button variant="ghost" size="sm" disabled={busy} onClick={spreadEvenly}>
+            Split evenly
+          </Button>
+        )}
+        {!unchanged && (
+          <Button
+            variant="ghost"
+            size="sm"
+            leftIcon={<RotateCcw className="h-3.5 w-3.5" />}
+            disabled={busy}
+            onClick={resetToChain}
+          >
+            Discard changes
+          </Button>
+        )}
+        {(rows.length > 1 || total !== 100) && (
+          <span
+            className="ml-auto text-[11px] font-semibold"
+            style={{ color: total === 100 ? 'var(--text-muted)' : 'var(--accent-warning)' }}
+          >
+            Shares total {total}%{total === 100 ? '' : ' — must be 100%'}
+          </span>
+        )}
+      </div>
+
+      {/* ── Save ─────────────────────────────────────────────────────────── */}
+      <div
+        className="flex flex-wrap items-center justify-between gap-3 pt-4"
+        style={{ borderTop: '1px solid var(--border-primary)' }}
+      >
+        <p
+          className="max-w-xl text-[11px] leading-relaxed"
+          style={{ color: invalid ? 'var(--accent-warning)' : 'var(--text-muted)' }}
+        >
           {invalid ??
             (unchanged
-              ? 'This is already the on-chain split.'
-              : `Each sale pays ${(bps / 100).toString()}%: ${rows
-                  .map((r, i) => `${((bps * r.percentage) / 10_000).toFixed(3).replace(/\.?0+$/, '')}% to wallet ${i + 1}`)
-                  .join(', ')}. ~0.00001 SOL fee, plus a little rent if the account grows.`)}
+              ? 'This is already the on-chain split — nothing to save.'
+              : `Each sale pays ${bps / 100}%: ${rows
+                  .map(
+                    (r, i) =>
+                      `${((bps * r.percentage) / 10_000).toFixed(3).replace(/\.?0+$/, '')}% to wallet ${i + 1}`,
+                  )
+                  .join(', ')}. One signature, ~0.00001 SOL fee plus a little rent if the list grew.`)}
         </p>
         <Button
-          variant="primary"
-          size="sm"
-          disabled={disabled || !!invalid || unchanged}
-          onClick={() => onSign(split)}
-          leftIcon={busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : undefined}
+          onClick={() => onSave(split)}
+          isLoading={busy}
+          disabled={busy || locked || !!blocked || !!invalid || unchanged}
+          title={blocked ?? invalid ?? (unchanged ? 'Nothing has changed' : 'Write this split on chain')}
         >
-          {busy ? 'Waiting for wallet…' : 'Sign'}
+          {busy ? 'Waiting for the wallet…' : 'Save royalties on chain'}
         </Button>
       </div>
+
+      {blocked && !busy && (
+        <p className="text-[11px]" style={{ color: 'var(--text-tertiary)' }}>
+          {blocked}
+        </p>
+      )}
     </div>
   )
 }
