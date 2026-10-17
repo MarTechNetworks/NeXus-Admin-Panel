@@ -38,8 +38,8 @@ RUN pnpm install --frozen-lockfile
 COPY . .
 
 # Set environment variables for build
-ENV NEXT_TELEMETRY_DISABLED 1
-ENV NODE_ENV production
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV NODE_ENV=production
 
 # NEXT_PUBLIC_* is inlined into the client bundle at BUILD time, not read at
 # runtime — setting it in docker-compose `environment:` does nothing. It has to
@@ -80,8 +80,8 @@ RUN pnpm install
 COPY . .
 
 # Set environment variables
-ENV NODE_ENV development
-ENV NEXT_TELEMETRY_DISABLED 1
+ENV NODE_ENV=development
+ENV NEXT_TELEMETRY_DISABLED=1
 
 EXPOSE 3000
 
@@ -99,8 +99,8 @@ RUN apk add --no-cache curl
 # the image is built, which is how a Node version bump becomes a surprise.
 RUN npm install -g pnpm@11.17.0
 
-ENV NODE_ENV production
-ENV NEXT_TELEMETRY_DISABLED 1
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
 
 # Create non-root user
 RUN addgroup --system --gid 1001 nodejs
@@ -118,7 +118,7 @@ USER nextjs
 
 EXPOSE 3000
 
-ENV PORT 3000
-ENV HOSTNAME "0.0.0.0"
+ENV PORT=3000
+ENV HOSTNAME="0.0.0.0"
 
 CMD ["node", "server.js"]
