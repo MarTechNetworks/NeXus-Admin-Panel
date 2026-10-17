@@ -112,7 +112,14 @@ export interface RevenueSummary {
   feesReceived7d: number
   feesReceived30d: number
   feeRecipients: Array<{ wallet: string; shareBps: number | null; sol: number }>
-  /** Observed credits, not mints — one mint paying two recipients is two credits. */
+  /** Which payer the revenue came from: our launchpad program, or a GuardianZ mint. */
+  feesBySource: Array<{ source: string; sol: number }>
+  /**
+   * Credits to the fee wallets that no mint paid — ops funding, refunds, airdrops.
+   * Excluded from feesReceived deliberately; shown so the exclusion is visible.
+   */
+  nonRevenueCredits: number
+  /** Observed fee credits, not mints — one mint paying two recipients is two credits. */
   treasuryCredits: number
   /** ISO timestamp, or null when the scanner has never run. Do not render null as 0. */
   treasuryScannedAt: string | null

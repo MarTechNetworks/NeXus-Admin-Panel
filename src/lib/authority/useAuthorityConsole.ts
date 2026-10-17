@@ -26,6 +26,7 @@ import {
 import { diffAuthority, draftFromSnapshot, hasBlockingIssue, validateAuthority, type RentReport } from './diff'
 import { loadAuthoritySnapshot, checkRecipientsRentExempt, type CollectionMetaByMint } from './read-state'
 import type { AuthorityDraft, AuthoritySnapshot } from './types'
+import { isUserCancellation } from '@/lib/solana/errors'
 
 export type SubmitPhase =
   | 'idle'
@@ -315,8 +316,10 @@ export function useAuthorityConsole() {
       setSubmit((s) => ({
         ...s,
         phase: 'error',
-        // A wallet rejection is a decision, not a failure — say so plainly.
-        error: /reject|denied|cancel/i.test(message) ? 'Signature declined in the wallet.' : message,
+        // A wallet rejection is a decision, not a failure — say so plainly. Matched on
+        // the error itself rather than on the message containing "reject", which also
+        // swallowed every program error that happened to use the word.
+        error: isUserCancellation(e) ? 'Signature declined in the wallet.' : message,
         signatures: [...signatures],
       }))
     }

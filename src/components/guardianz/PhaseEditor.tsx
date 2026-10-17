@@ -68,6 +68,7 @@ import {
   type GuardGroupSummary,
   type PhaseDraft,
 } from '@/lib/guardianz/guard-groups'
+import { isUserCancellation, TransactionUnknownError } from '@/lib/guardianz/send'
 import { fetchSidecar, saveSidecar } from '@/lib/guardianz/phase-store'
 
 /**
@@ -952,7 +953,18 @@ export function PhaseEditor({
       onSaved()
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
-      setError(/reject|denied|cancel/i.test(msg) ? 'Cancelled in the wallet.' : msg.split('\n')[0].slice(0, 300))
+      // Not a substring match on "reject": that labelled every real failure — a guard
+      // that denied the save, a program error, anything whose text contains those
+      // letters — as "you cancelled", and threw the message away with it. A save that
+      // triggered the wallet and then instantly claimed to be cancelled was this.
+      setError(
+        isUserCancellation(e)
+          ? 'Cancelled in the wallet.'
+          : e instanceof TransactionUnknownError
+            ? e.message
+            : msg.split('\n')[0].slice(0, 300),
+      )
+      if (e instanceof TransactionUnknownError) await onSaved()
     } finally {
       setBusy(false)
     }

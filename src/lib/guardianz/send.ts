@@ -79,6 +79,10 @@ export class TransactionFailedError extends Error {
   }
 }
 
+// Lives in lib/solana because every console needs it, not just this one. Re-exported
+// here so the GuardianZ call sites keep importing their wallet concerns from one place.
+export { isUserCancellation } from '@/lib/solana/errors'
+
 const toBase58 = (sig: TransactionSignature): string => base58.deserialize(sig)[0]
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))

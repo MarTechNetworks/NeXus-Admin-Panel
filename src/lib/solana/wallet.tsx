@@ -26,6 +26,8 @@ import {
 } from 'react'
 import { PublicKey, type Transaction, type VersionedTransaction } from '@solana/web3.js'
 
+import { isUserCancellation } from '@/lib/solana/errors'
+
 // ── Injected provider shape ──────────────────────────────────────────────────
 
 interface InjectedProvider {
@@ -161,9 +163,10 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         if (!raw) throw new Error('Wallet returned no public key')
         attach(provider, id, new PublicKey(raw))
       } catch (e) {
-        // Code 4001 is the standard "user rejected" — not worth a red banner.
+        // A decline is not worth a red banner; a real connection failure is, and must
+        // not be silenced just because its text contains "rejected".
         const msg = e instanceof Error ? e.message : 'Wallet connection failed'
-        setError(/reject|denied|cancel/i.test(msg) ? null : msg)
+        setError(isUserCancellation(e) ? null : msg)
       } finally {
         setConnecting(false)
       }

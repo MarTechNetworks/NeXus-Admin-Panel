@@ -68,7 +68,7 @@ import {
   validateRoyaltySplit,
   type RoyaltySplit,
 } from '@/lib/guardianz/admin-actions'
-import { TransactionUnknownError } from '@/lib/guardianz/send'
+import { isUserCancellation, TransactionUnknownError } from '@/lib/guardianz/send'
 import type { MigrationStatus } from '@/lib/guardianz/migration-status'
 import { walletUmi } from '@/lib/guardianz/umi'
 
@@ -93,7 +93,7 @@ const acct = (a: string) => `https://solscan.io/account/${a}`
 /** Wallet rejections read as rejections; everything else keeps its first line. */
 function friendlyError(e: unknown): string {
   const msg = e instanceof Error ? e.message : String(e)
-  if (/reject|denied|cancel/i.test(msg)) return 'Cancelled in the wallet.'
+  if (isUserCancellation(e)) return 'Cancelled in the wallet.'
   // TransactionUnknownError already reads as an instruction and carries its own link;
   // truncating it would cut off the part that says not to sign again.
   if (e instanceof TransactionUnknownError) return msg
@@ -131,6 +131,19 @@ export function GuardianzConsole() {
    * would strand two files behind a rent deposit the creator has already paid.
    */
   const poolSize = s?.poolSize ?? 0
+
+  /**
+   * How many GuardianZ exist right now, as opposed to how many were ever minted.
+   *
+   * Shown only as a footnote on the counter: the headline figure here and on the public
+   * page is `num_minted`, because "minted" asks how many of the 7,575 have been claimed
+   * and a burn does not put one back on sale. But the two differ by the burns, and a
+   * creator comparing this screen to a block explorer deserves to be told why rather
+   * than left to wonder which one is broken.
+   */
+  const liveMinted = s?.candyMachine
+    ? Math.max(0, (col?.totalSupply ?? 0) - s.candyMachine.itemsAvailable + s.candyMachine.itemsRedeemed)
+    : (col?.numMinted ?? 0)
 
   // Switching to a different account mid-flow is exactly how the wrong key signs;
   // clear any stale error the moment the address changes.
@@ -293,7 +306,20 @@ export function GuardianzConsole() {
               tone={col.updateAuthorityIsCreator ? 'success' : 'warning'}
               title={col.updateAuthority}
             />
-            <ChainValue label="Minted / supply" value={`${col.numMinted.toLocaleString()} / ${col.totalSupply.toLocaleString()}`} />
+            {/* The live count, matching the public drop page. `num_minted` is not it:
+                it counts mints ever made and never counts a burn back down, so it reads
+                two higher than the number of GuardianZ that exist — and a creator
+                comparing the two screens has no way to tell which is lying. The
+                difference is named rather than hidden. */}
+            <ChainValue
+              label="Minted / supply"
+              value={`${col.numMinted.toLocaleString()} / ${col.totalSupply.toLocaleString()}`}
+              title={
+                liveMinted !== col.numMinted
+                  ? `${liveMinted.toLocaleString()} still exist — ${(col.numMinted - liveMinted).toLocaleString()} have been burned since minting.`
+                  : undefined
+              }
+            />
             <ChainValue
               label="UpdateDelegate held by"
               value={col.updateDelegateHeldByLmn ? 'LaunchMyNFT PDA' : col.updateDelegateAuthority}

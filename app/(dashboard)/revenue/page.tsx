@@ -172,6 +172,31 @@ export default function RevenuePage() {
                 </span>
               ))}
             </p>
+            {/* Where the money came from, and what was deliberately not counted. The
+                non-revenue line exists so the exclusion is auditable: ops seeding a fee
+                wallet is a real credit that is not an earning, and hiding it entirely
+                would leave the next person to rediscover why the numbers differ from a
+                block explorer's view of the same wallet. */}
+            {summary.treasuryScannedAt != null && (
+              <p className="mt-1 text-xs" style={{ color: '#6a6a7a' }}>
+                {summary.feesBySource.length > 0 ? (
+                  <>
+                    By source:{' '}
+                    {summary.feesBySource.map((s, i) => (
+                      <span key={s.source}>
+                        {i > 0 && ' · '}
+                        {s.source} {fmtSol(s.sol)}
+                      </span>
+                    ))}
+                  </>
+                ) : (
+                  'No mint fees observed on chain yet'
+                )}
+                {summary.nonRevenueCredits > 0 && (
+                  <> · {fmtSol(summary.nonRevenueCredits)} received from non-mint transfers, not counted</>
+                )}
+              </p>
+            )}
             {/* The old headline number, demoted to what it is. This wallet is also the
                 program deploy payer, the upgrade authority and PLATFORM_AUTHORITY, so its
                 balance mixes fee income with deploy funding and ops spending — it is not
