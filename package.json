@@ -8,8 +8,9 @@
     "build": "tsc --project tsconfig.build.json --noEmit && next build",
     "start": "next start",
     "lint": "next lint",
-    "guardianz:snapshot": "node scripts/guardianz-snapshot.mjs",
-    "guardianz:upload": "node scripts/guardianz-upload.mjs"
+    "guardianz:snapshot": "node --env-file=.env scripts/guardianz-snapshot.mjs",
+    "guardianz:upload": "node --env-file=.env scripts/guardianz-upload.mjs",
+    "guardianz:preflight": "node --env-file=.env scripts/guardianz-preflight.mjs"
   },
   "dependencies": {
     "@coral-xyz/anchor": "^0.32.1",
