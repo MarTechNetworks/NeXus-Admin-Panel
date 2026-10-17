@@ -748,11 +748,15 @@ function PhaseCard({
             }
             trailing={<span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>SOL</span>}
           >
+            {/* Placeholder is 0, not 0.25. A greyed-out price reads as a default that
+                will be used, and an empty field here means a FREE phase — so suggesting
+                the old mint's 0.25 invited someone to leave it blank believing they had
+                set it. Zero is what blank actually does. */}
             <TextInput
               id={`price-${draft.key}`}
               value={draft.priceSol}
               onChange={(v) => onChange({ priceSol: v })}
-              placeholder="0.25"
+              placeholder="0"
               mono
             />
           </Field>

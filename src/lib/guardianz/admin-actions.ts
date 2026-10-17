@@ -34,7 +34,10 @@ import {
   setCandyMachineAuthority,
 } from '@metaplex-foundation/mpl-core-candy-machine'
 import { generateSigner, publicKey, sol, some, type Umi } from '@metaplex-foundation/umi'
-import { base58 } from '@metaplex-foundation/umi/serializers'
+// Every action here goes through this rather than `builder.sendAndConfirm(umi)`, which
+// reports "Signature … has expired: block height exceeded" for transactions that landed.
+// See send.ts — the distinction between "failed" and "unknown" is the whole point.
+import { sendAndConfirm } from '@/lib/guardianz/send'
 
 import {
   GUARDIANZ_COLLECTION,
@@ -52,11 +55,14 @@ export interface ActionResult {
 
 /** Step 1 — take the UpdateDelegate plugin back from LaunchMyNFT. */
 export async function reclaimUpdateDelegate(umi: Umi): Promise<ActionResult> {
-  const { signature } = await revokeCollectionPluginAuthority(umi, {
-    collection: COLLECTION,
-    plugin: { type: 'UpdateDelegate' },
-  }).sendAndConfirm(umi)
-  return { signature: toBase58(signature) }
+  const { signature } = await sendAndConfirm(
+    umi,
+    revokeCollectionPluginAuthority(umi, {
+      collection: COLLECTION,
+      plugin: { type: 'UpdateDelegate' },
+    }),
+  )
+  return { signature }
 }
 
 export interface CreateCandyMachineParams {
@@ -115,11 +121,13 @@ export async function createCandyMachine(
   })
 
   const guard = findCandyGuardPda(umi, { base: candyMachine.publicKey })
-  const { signature } = await builder
-    .add(setCandyMachineAuthority(umi, { candyMachine: candyMachine.publicKey, newAuthority: ops }))
-    .add(setCandyGuardAuthority(umi, { candyGuard: guard, newAuthority: ops }))
-    .sendAndConfirm(umi)
-  return { signature: toBase58(signature), candyMachine: candyMachine.publicKey }
+  const { signature } = await sendAndConfirm(
+    umi,
+    builder
+      .add(setCandyMachineAuthority(umi, { candyMachine: candyMachine.publicKey, newAuthority: ops }))
+      .add(setCandyGuardAuthority(umi, { candyGuard: guard, newAuthority: ops })),
+  )
+  return { signature, candyMachine: candyMachine.publicKey }
 }
 
 export interface RoyaltySplit {
@@ -201,8 +209,8 @@ export async function updateRoyaltySplit(
     options.pluginExists === false
       ? addCollectionPlugin(umi, { collection: COLLECTION, plugin })
       : updateCollectionPlugin(umi, { collection: COLLECTION, plugin })
-  const { signature } = await builder.sendAndConfirm(umi)
-  return { signature: toBase58(signature) }
+  const { signature } = await sendAndConfirm(umi, builder)
+  return { signature }
 }
 
 /**
@@ -212,18 +220,17 @@ export async function updateRoyaltySplit(
  * instructions in one transaction. Not surfaced in the UI; see the file header.
  */
 export async function thawCollection(umi: Umi): Promise<ActionResult> {
-  const { signature } = await revokeCollectionPluginAuthority(umi, {
-    collection: COLLECTION,
-    plugin: { type: 'PermanentFreezeDelegate' },
-  })
-    .add(
+  const { signature } = await sendAndConfirm(
+    umi,
+    revokeCollectionPluginAuthority(umi, {
+      collection: COLLECTION,
+      plugin: { type: 'PermanentFreezeDelegate' },
+    }).add(
       updateCollectionPlugin(umi, {
         collection: COLLECTION,
         plugin: { type: 'PermanentFreezeDelegate', frozen: false },
       }),
-    )
-    .sendAndConfirm(umi)
-  return { signature: toBase58(signature) }
+    ),
+  )
+  return { signature }
 }
-
-const toBase58 = (sig: Uint8Array): string => base58.deserialize(sig)[0]

@@ -68,6 +68,7 @@ import {
   validateRoyaltySplit,
   type RoyaltySplit,
 } from '@/lib/guardianz/admin-actions'
+import { TransactionUnknownError } from '@/lib/guardianz/send'
 import type { MigrationStatus } from '@/lib/guardianz/migration-status'
 import { walletUmi } from '@/lib/guardianz/umi'
 
@@ -92,7 +93,11 @@ const acct = (a: string) => `https://solscan.io/account/${a}`
 /** Wallet rejections read as rejections; everything else keeps its first line. */
 function friendlyError(e: unknown): string {
   const msg = e instanceof Error ? e.message : String(e)
-  return /reject|denied|cancel/i.test(msg) ? 'Cancelled in the wallet.' : msg.split('\n')[0].slice(0, 300)
+  if (/reject|denied|cancel/i.test(msg)) return 'Cancelled in the wallet.'
+  // TransactionUnknownError already reads as an instruction and carries its own link;
+  // truncating it would cut off the part that says not to sign again.
+  if (e instanceof TransactionUnknownError) return msg
+  return msg.split('\n')[0].slice(0, 300)
 }
 
 async function fetchStatus(): Promise<MigrationStatus> {
@@ -163,6 +168,11 @@ export function GuardianzConsole() {
         await status.refetch()
       } catch (e) {
         setError(friendlyError(e))
+        // An unknown result is not a failure — the transaction may have landed while our
+        // polling was being rate-limited. Re-read the chain so a step that worked flips
+        // to "Signed" on its own rather than leaving the operator staring at red and
+        // tempted to sign a second 0.55 SOL deposit.
+        if (e instanceof TransactionUnknownError) await status.refetch()
       } finally {
         setBusy(null)
       }
@@ -191,6 +201,7 @@ export function GuardianzConsole() {
         await status.refetch()
       } catch (e) {
         setRoyaltyError(friendlyError(e))
+        if (e instanceof TransactionUnknownError) await status.refetch()
       } finally {
         setBusy(null)
       }

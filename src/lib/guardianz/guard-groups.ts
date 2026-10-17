@@ -52,7 +52,7 @@ import {
   sol,
   type Umi,
 } from '@metaplex-foundation/umi'
-import { base58 } from '@metaplex-foundation/umi/serializers'
+import { sendAndConfirm } from '@/lib/guardianz/send'
 
 import { CREATOR_WALLET } from '@/lib/guardianz/constants'
 
@@ -617,13 +617,16 @@ export async function savePhases(
   // `groups` is a plain array here, not an `Option` — the hooked `updateCandyGuard`
   // takes `CandyGuardDataArgs`, and an empty array is the "no groups, default set only"
   // state (gotcha 4).
-  const { signature } = await updateCandyGuard(umi, {
-    candyGuard: publicKey(candyGuard),
-    guards: {},
-    groups,
-  }).sendAndConfirm(umi)
+  const { signature } = await sendAndConfirm(
+    umi,
+    updateCandyGuard(umi, {
+      candyGuard: publicKey(candyGuard),
+      guards: {},
+      groups,
+    }),
+  )
 
-  return { signature: base58.deserialize(signature)[0], lists, mintLimitIds }
+  return { signature, lists, mintLimitIds }
 }
 
 /** The account that must sign `updateCandyGuard`. Read, never assumed. */
