@@ -665,11 +665,17 @@ function PhaseCard({
             </>
           }
         >
+          {/* "e.g." because a bare example here reads as a filled field. This said
+              "DawG Pound", which is a plausible real phase name for this collection —
+              the creator saw grey text in an empty box, believed the phase was named,
+              and spent an hour on a Save that stayed blocked by "Needs a name" with a
+              badge insisting something was unsaved. Same trap as the price placeholder
+              that suggested 0.25 for a field where blank means free. */}
           <TextInput
             id={`display-${draft.key}`}
             value={draft.displayName}
             onChange={(v) => onChange({ displayName: v.slice(0, DISPLAY_NAME_MAX) })}
-            placeholder="DawG Pound"
+            placeholder="e.g. Allowlist"
           />
         </Field>
 
@@ -678,11 +684,13 @@ function PhaseCard({
           htmlFor={`desc-${draft.key}`}
           hint="One or two sentences under the tab — who this phase is for."
         >
+          {/* A full sentence as a placeholder reads as filled content, same as the
+              name field above did. Prefixed so it cannot be mistaken for a value. */}
           <TextArea
             id={`desc-${draft.key}`}
             value={draft.description}
             onChange={(v) => onChange({ description: v.slice(0, DESCRIPTION_MAX) })}
-            placeholder="Original mint terms, carried across from LaunchMyNFT."
+            placeholder="e.g. Open to everyone, original mint price."
             rows={2}
           />
         </Field>
