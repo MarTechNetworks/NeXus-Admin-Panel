@@ -41,6 +41,7 @@ export const endpoints = {
     // Backend/src/revenue/revenue.controller.ts
     summary: '/api/admin/revenue/summary',
     byCollection: '/api/admin/revenue/by-collection',
+    credits: '/api/admin/revenue/credits',
     byCreator: '/api/admin/revenue/by-creator',
     timeseries: '/api/admin/revenue/timeseries',
     exportCsv: '/api/admin/revenue/export.csv',

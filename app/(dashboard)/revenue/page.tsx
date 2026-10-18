@@ -9,6 +9,7 @@ import {
   useRevenueByCollection,
   useRevenueByCreator,
   useRevenueTimeseries,
+  useRevenueCredits,
 } from '@/lib/api/hooks'
 import { api } from '@/lib/api/client'
 import { endpoints } from '@/lib/api/endpoints'
@@ -40,6 +41,17 @@ function fmtSol(n?: number | null): string {
   return `${n.toLocaleString(undefined, { maximumFractionDigits: decimals })} SOL`
 }
 
+// Individual credits are checked against an explorer, so they are shown whole. fmtSol
+// rounds a sub-1 figure to 4 decimals, which turns a 0.00048 SOL fee into "0.0005" —
+// fine for a headline, useless for reconciling one line against a transaction.
+function fmtSolExact(n: number): string {
+  return `${n.toFixed(9).replace(/0+$/, '').replace(/\.$/, '')} SOL`
+}
+
+function shortSig(sig: string): string {
+  return `${sig.slice(0, 8)}…${sig.slice(-8)}`
+}
+
 const tooltipStyle = {
   background: '#111118',
   border: `1px solid ${GRID}`,
@@ -56,6 +68,7 @@ export default function RevenuePage() {
   const { data: series, isLoading: seriesLoading } = useRevenueTimeseries({ bucket })
   const { data: byCollection, isLoading: byColLoading } = useRevenueByCollection(50)
   const { data: byCreator, isLoading: byCreatorLoading } = useRevenueByCreator()
+  const { data: credits, isLoading: creditsLoading } = useRevenueCredits(100)
 
   async function handleExport() {
     setExporting(true)
@@ -110,13 +123,14 @@ export default function RevenuePage() {
       sub: unscanned ? 'Not scanned yet' : `Today ${fmtSol(summary!.feesReceived24h)}`,
     },
     {
-      // The snapshot, demoted. Exact for launchpad collections and silent about every
-      // other payer, so it is a reconciliation figure, not an earnings one.
-      label: 'Launchpad accrued',
+      // The snapshot, demoted. minted × the fee stored on each Collection row — an
+      // estimate of what should have been paid, not a record of what was. Worth keeping
+      // only as the thing the received figure is checked against.
+      label: 'Accrued (estimate)',
       value: fmtSol(summary?.allTimeRevenue),
       sub: unscanned
-        ? 'Minted × fee, launchpad only'
-        : `Minted × fee · received differs by ${fmtSol(summary!.treasuryDrift)}`,
+        ? 'Minted × stored fee, per collection row'
+        : `Minted × stored fee · received differs by ${fmtSol(summary!.treasuryDrift)}`,
     },
   ]
 
@@ -281,6 +295,94 @@ export default function RevenuePage() {
         </div>
       </section>
 
+      {/* Fee payments — the itemised view.
+
+          Everything else on this page is either an aggregate or a Collection-table view,
+          and a foreign Candy Machine appears in neither. So the headline could read
+          "0.0096 SOL · 4 credits" with no way to find out which four. Each row carries
+          its signature, which makes the whole page checkable against an explorer rather
+          than something you have to take on trust.
+
+          Non-revenue credits are listed and struck through rather than filtered out:
+          they are exactly the difference between this list and the total above, and
+          dropping them would make that difference unexplainable from here. */}
+      <section className="mb-8">
+        <h2 className="mb-1 text-xs font-semibold uppercase tracking-widest" style={{ color: '#8a8a9a' }}>
+          Fee Payments Received
+        </h2>
+        <p className="mb-4 text-xs" style={{ color: '#6a6a7a' }}>
+          Every credit to a fee wallet, scanned from the chain. Greyed rows are credits no mint paid —
+          ops funding or refunds — which are shown for completeness and excluded from all totals.
+        </p>
+        <div className="card overflow-x-auto">
+          <table className="min-w-full divide-y" style={{ borderColor: GRID }}>
+            <thead style={{ background: '#1a1a24' }}>
+              <tr>
+                {['When', 'Source', 'Recipient', 'Amount', 'Transaction'].map((h) => (
+                  <th
+                    key={h}
+                    className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide"
+                    style={{ color: '#8a8a9a' }}
+                  >
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y" style={{ borderColor: GRID }}>
+              {creditsLoading ? (
+                <tr>
+                  <td colSpan={5} className="px-4 py-6 text-center text-sm" style={{ color: '#8a8a9a' }}>
+                    Loading…
+                  </td>
+                </tr>
+              ) : !credits || credits.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="px-4 py-6 text-center text-sm" style={{ color: '#8a8a9a' }}>
+                    {unscanned ? 'Not scanned yet.' : 'No credits recorded.'}
+                  </td>
+                </tr>
+              ) : (
+                credits.map((c) => (
+                  <tr key={`${c.signature}-${c.wallet}`} style={{ opacity: c.isRevenue ? 1 : 0.45 }}>
+                    <td className="whitespace-nowrap px-4 py-3 text-sm" style={{ color: '#b8b8c8' }}>
+                      {c.blockTime ? new Date(c.blockTime).toLocaleString() : `slot ${c.slot}`}
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3 text-sm">
+                      <span
+                        className="rounded px-2 py-0.5 text-xs font-medium"
+                        style={{
+                          background: c.isRevenue ? 'rgba(16,185,129,0.12)' : 'rgba(255,255,255,0.06)',
+                          color: c.isRevenue ? GREEN : '#8a8a9a',
+                        }}
+                      >
+                        {c.source}
+                      </span>
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3 font-mono text-xs" style={{ color: '#8a8a9a' }}>
+                      {c.wallet.slice(0, 4)}…{c.wallet.slice(-4)}
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3 text-sm font-semibold" style={{ color: '#ffffff' }}>
+                      {fmtSolExact(c.sol)}
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3 font-mono text-xs">
+                      <a
+                        href={`https://solscan.io/tx/${c.signature}`}
+                        target="_blank"
+                        rel="noreferrer noopener"
+                        style={{ color: CYAN }}
+                      >
+                        {shortSig(c.signature)}
+                      </a>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
       {/* Top collections + free/paid split */}
       <section className="mb-8 grid gap-4 lg:grid-cols-3">
         <div className="card p-4 lg:col-span-2" style={{ height: 320 }}>
@@ -336,17 +438,21 @@ export default function RevenuePage() {
         </div>
       </section>
 
-      {/* By collection table — launchpad only. These rows come from the Collection
-          table, so a payer that has no Collection row (GuardianZ, on its own Candy
-          Machine) contributes to the totals above and to nothing here. Saying so beats
-          letting an empty table read as "no revenue". */}
+      {/* By collection table — an estimate, not a record.
+
+          Each row is that collection's `minted` multiplied by the fee stored on it, so
+          it only matches reality where both are ours to maintain. GuardianZ is the
+          counterexample on both counts: its `minted` counts every asset ever minted into
+          the Core collection, thousands of which were sold on LaunchMyNFT before this
+          platform existed, and its stored fee is whatever the row says rather than what
+          any particular buyer paid. Fee Payments Received above is the record. */}
       <section className="mb-8">
         <h2 className="mb-1 text-xs font-semibold uppercase tracking-widest" style={{ color: '#8a8a9a' }}>
           Revenue by Collection
         </h2>
         <p className="mb-4 text-xs" style={{ color: '#6a6a7a' }}>
-          Launchpad collections only — GuardianZ mints on its own Candy Machine and appears in the
-          totals above, not in this table.
+          Estimated: each collection’s minted count × the fee stored on it. For money actually
+          received, see Fee Payments Received above.
         </p>
         <div className="card overflow-x-auto">
           <table className="min-w-full divide-y" style={{ borderColor: GRID }}>

@@ -24,6 +24,7 @@ import type {
   RevenueByCreatorRow,
   RevenueSummary,
   RevenueTimeseriesPoint,
+  RevenueCredit,
   SolanaConfig,
   SolanaNetwork,
 } from '../types'
@@ -301,6 +302,15 @@ export function useRevenueByCollection(limit = 100, options?: QueryOpts<RevenueB
     queryKey: ['revenue', 'by-collection', limit],
     queryFn: () =>
       api.get<RevenueByCollectionRow[]>(endpoints.revenue.byCollection, { params: { limit } }),
+    ...options,
+  })
+}
+
+export function useRevenueCredits(limit = 100, options?: QueryOpts<RevenueCredit[]>) {
+  return useQuery({
+    queryKey: ['revenue', 'credits', limit],
+    queryFn: () => api.get<RevenueCredit[]>(endpoints.revenue.credits, { params: { limit } }),
+    refetchInterval: 60_000,
     ...options,
   })
 }

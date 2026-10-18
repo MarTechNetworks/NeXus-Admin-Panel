@@ -165,6 +165,18 @@ export interface RevenueTimeseriesPoint {
   minted: number
 }
 
+/** One credit to one fee recipient in one transaction, as scanned off the chain. */
+export interface RevenueCredit {
+  signature: string
+  wallet: string
+  slot: number
+  blockTime: string | null
+  sol: number
+  source: string
+  /** False for credits that no mint paid (ops funding, refunds) — shown, never summed. */
+  isRevenue: boolean
+}
+
 // ── Audit log ────────────────────────────────────────────────────────────────
 export interface AuditEntry {
   id: string
