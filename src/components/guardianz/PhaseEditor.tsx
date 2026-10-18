@@ -821,36 +821,78 @@ export function PhaseEditor({
     [groups, sidecar.data],
   )
 
-  // First paint: prefer a draft left behind by an interrupted edit, else the chain.
+  /**
+   * What the chain looked like, as a string, so a draft can say what it was based on.
+   *
+   * `groups` is the already-flattened wire summary, so stringifying it is safe and
+   * captures everything this editor can overwrite: labels, prices, windows, caps, roots.
+   */
+  const chainFingerprint = useMemo(() => JSON.stringify(groups), [groups])
+
+  /**
+   * First paint: the chain wins unless the draft was built from exactly this chain state.
+   *
+   * This used to restore any stored draft unconditionally and never look at the chain.
+   * That is safe for a form that patches fields, and actively destructive for this one:
+   * saving sends `updateCandyGuard`, which **replaces every group at once**. A draft left
+   * over from a previous session therefore did not just show stale values — saving it
+   * deleted whatever had been written on chain since.
+   *
+   * It happened: a draft from the previous day was restored over a live phase, and the
+   * save wiped that phase's `startDate` while the operator was looking at a form they
+   * believed reflected the chain. The same draft then kept reappearing as "1 unsaved"
+   * after they deleted the phase, because nothing ever cleared it.
+   *
+   * So a draft is only restored when the chain is still what it was written against.
+   * Otherwise it is dropped — the work it represents is one re-entry, and the alternative
+   * is silently destroying someone else's.
+   */
   useEffect(() => {
     if (drafts !== null || sidecar.isLoading) return
     try {
       const stored = localStorage.getItem(DRAFT_KEY)
       if (stored) {
-        const parsed = JSON.parse(stored) as PhaseDraft[]
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          // Through the same derivation as an edit, so a draft written before labels were
-          // generated — or one whose name was changed and never saved — starts consistent
-          // instead of showing one label and writing another.
-          setDrafts(withDerivedLabels(parsed))
-          return
+        const parsed = JSON.parse(stored) as unknown
+        // The stored shape carries its basis. Anything else is from before this check
+        // existed and cannot prove what it was built on, so it is not trusted.
+        if (
+          parsed &&
+          typeof parsed === 'object' &&
+          'basedOn' in parsed &&
+          'drafts' in parsed &&
+          (parsed as { basedOn: unknown }).basedOn === chainFingerprint
+        ) {
+          const list = (parsed as { drafts: PhaseDraft[] }).drafts
+          if (Array.isArray(list) && list.length > 0) {
+            // Through the same derivation as an edit, so a draft written before labels
+            // were generated — or one whose name was changed and never saved — starts
+            // consistent instead of showing one label and writing another.
+            setDrafts(withDerivedLabels(list))
+            return
+          }
         }
+        // Stale or unrecognised: the chain has moved on, so the draft is not a safe
+        // starting point for a full rewrite. Clear it rather than leaving it to come
+        // back as a phantom "unsaved" on the next load.
+        localStorage.removeItem(DRAFT_KEY)
       }
     } catch {
       // A corrupt draft is not worth a broken page.
     }
     setDrafts(fromChain)
-  }, [drafts, fromChain, sidecar.isLoading])
+  }, [drafts, fromChain, sidecar.isLoading, chainFingerprint])
 
-  // Keep the scratchpad current, so a reload mid-edit loses nothing.
+  // Keep the scratchpad current, so a reload mid-edit loses nothing. Stamped with the
+  // chain state it was written against — without that, a restore cannot tell an
+  // interrupted edit from one that a later save has already made dangerous.
   useEffect(() => {
     if (!drafts) return
     try {
-      localStorage.setItem(DRAFT_KEY, JSON.stringify(drafts))
+      localStorage.setItem(DRAFT_KEY, JSON.stringify({ basedOn: chainFingerprint, drafts }))
     } catch {
       // Private mode, quota, whatever — the editor still works.
     }
-  }, [drafts])
+  }, [drafts, chainFingerprint])
 
   const list = drafts ?? []
   const problems = useMemo(() => validatePhases(list), [list])
