@@ -635,11 +635,25 @@ function PhaseCard({
           >
             <ArrowDown className="h-3.5 w-3.5" />
           </button>
+          {/* Removing the last phase is blocked rather than merely rejected later.
+              Zero phases is an unsaveable state — the mint would fall back to the guard's
+              bare default set, which carries no price, window or cap — so `validatePhases`
+              refuses it. But refusing it at save time is a trap: the editor is then dirty
+              (one deletion) and permanently unsaveable, so the "1 unsaved" badge nags at a
+              change that can never be committed, and the only way out is a "Discard
+              changes" button nothing points you to. MarTech lost an evening in exactly
+              that corner. Replacing a lone phase means adding the new one first, which is
+              also the safer order: the mint is never left with no terms. */}
           <button
             type="button"
+            disabled={total === 1}
             onClick={onRemove}
-            title="Remove this phase"
-            className="rounded p-1"
+            title={
+              total === 1
+                ? 'A mint needs at least one phase. Add the replacement first, then remove this one.'
+                : 'Remove this phase'
+            }
+            className="rounded p-1 disabled:opacity-30"
             style={{ color: 'var(--accent-error)' }}
           >
             <Trash2 className="h-3.5 w-3.5" />

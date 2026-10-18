@@ -318,7 +318,16 @@ export function validatePhases(drafts: PhaseDraft[]): PhaseProblem[] {
   const problems: PhaseProblem[] = []
 
   if (drafts.length === 0) {
-    problems.push({ index: -1, message: 'Add at least one phase, or the mint has no terms to run under.' })
+    // Names the way out, because this state cannot be saved and the badge will keep
+    // insisting something is unsaved until it is left. The editor now blocks removing the
+    // last phase, so reaching this needs an older draft restored from storage — but a
+    // dead end that explains itself is the difference between a minute and an evening.
+    problems.push({
+      index: -1,
+      message:
+        'Add at least one phase — with none, the mint has no terms to run under, so this cannot be saved. ' +
+        'To put back the phases that are on chain, press "Discard changes".',
+    })
   }
 
   const labels = new Map<string, number>()
