@@ -78,40 +78,45 @@ export default function RevenuePage() {
     .slice(0, 8)
     .map((c) => ({ name: c.name.length > 14 ? c.name.slice(0, 13) + '…' : c.name, feeRevenue: c.feeRevenue }))
 
+  // The headline is what the fee wallets were actually paid, across every payer.
+  //
+  // It used to be the Collection snapshot (minted × fee), which is exact for launchpad
+  // collections and structurally blind to everything else. GuardianZ mints on Metaplex's
+  // Candy Machine and has no Collection row, so the page led with "0 SOL" on a day the
+  // wallets had taken real fees — the only mainnet fee income there has ever been. An
+  // earnings figure that cannot see an earner is not the headline.
+  //
+  // The accrual is kept as the fourth card, which is what it is good for: comparing what
+  // the launchpad *should* have paid against what arrived.
+  const unscanned = summary?.treasuryScannedAt == null
   const kpis = [
-    { label: 'All-time fee revenue', value: fmtSol(summary?.allTimeRevenue), sub: 'Platform cut, all collections' },
-    // The ledger figures are derived from on-chain `minted` deltas; the received figures
-    // are what the fee wallets were actually credited. Showing them side by side is the
-    // cheapest possible reconciliation — if they diverge, one of the two is wrong and
-    // someone should find out which before the gap grows.
+    {
+      label: 'Fees received, all-time',
+      value: unscanned ? '—' : fmtSol(summary?.feesReceived),
+      sub: unscanned
+        ? 'Not scanned yet'
+        : summary!.treasuryBacklog
+          ? `Catching up — at least this much · ${summary!.treasuryCredits} credits`
+          : `Launchpad + GuardianZ · ${summary!.treasuryCredits} credits`,
+    },
     {
       label: 'Last 30 days',
-      value: fmtSol(summary?.last30d),
-      sub:
-        summary?.treasuryScannedAt == null
-          ? 'From the fee ledger'
-          : `Ledger · received ${fmtSol(summary.feesReceived30d)}`,
+      value: unscanned ? '—' : fmtSol(summary?.feesReceived30d),
+      sub: unscanned ? 'Not scanned yet' : 'Received on-chain',
     },
     {
       label: 'Last 7 days',
-      value: fmtSol(summary?.last7d),
-      sub:
-        summary?.treasuryScannedAt == null
-          ? `Today: ${fmtSol(summary?.last24h)}`
-          : `Today ${fmtSol(summary.last24h)} · received ${fmtSol(summary.feesReceived7d)}`,
+      value: unscanned ? '—' : fmtSol(summary?.feesReceived7d),
+      sub: unscanned ? 'Not scanned yet' : `Today ${fmtSol(summary!.feesReceived24h)}`,
     },
     {
-      // Money the chain actually paid the fee wallets, not what they hold. The old card
-      // here showed getBalance(PLATFORM_WALLET) — a wallet that is also the program
-      // deploy payer and upgrade authority, so its balance was mostly deploy change.
-      label: 'Fees received on-chain',
-      value: summary?.treasuryScannedAt == null ? '—' : fmtSol(summary?.feesReceived),
-      sub:
-        summary?.treasuryScannedAt == null
-          ? 'Not scanned yet'
-          : summary.treasuryBacklog
-            ? `Catching up — at least ${fmtSol(summary.feesReceived)} so far`
-            : `Vs accrued: ${fmtSol(summary.treasuryDrift)} · ${summary.treasuryCredits} credits`,
+      // The snapshot, demoted. Exact for launchpad collections and silent about every
+      // other payer, so it is a reconciliation figure, not an earnings one.
+      label: 'Launchpad accrued',
+      value: fmtSol(summary?.allTimeRevenue),
+      sub: unscanned
+        ? 'Minted × fee, launchpad only'
+        : `Minted × fee · received differs by ${fmtSol(summary!.treasuryDrift)}`,
     },
   ]
 
@@ -240,9 +245,11 @@ export default function RevenuePage() {
             </div>
           ) : !series || series.length === 0 ? (
             <div className="flex h-full flex-col items-center justify-center text-center text-sm" style={{ color: '#8a8a9a' }}>
-              <p>No revenue recorded yet.</p>
+              <p>{unscanned ? 'Not scanned yet.' : 'No fees received in this window.'}</p>
               <p className="mt-1 text-xs" style={{ color: '#6a6a7a' }}>
-                The ledger fills as the sync observes new mints. All-time totals above are exact regardless.
+                {unscanned
+                  ? 'The treasury scan runs every 5 minutes and fills this from the fee wallets’ own history.'
+                  : 'Every mint fee the wallets were paid is plotted here, launchpad and GuardianZ alike.'}
               </p>
             </div>
           ) : (
@@ -329,11 +336,18 @@ export default function RevenuePage() {
         </div>
       </section>
 
-      {/* By collection table */}
+      {/* By collection table — launchpad only. These rows come from the Collection
+          table, so a payer that has no Collection row (GuardianZ, on its own Candy
+          Machine) contributes to the totals above and to nothing here. Saying so beats
+          letting an empty table read as "no revenue". */}
       <section className="mb-8">
-        <h2 className="mb-4 text-xs font-semibold uppercase tracking-widest" style={{ color: '#8a8a9a' }}>
+        <h2 className="mb-1 text-xs font-semibold uppercase tracking-widest" style={{ color: '#8a8a9a' }}>
           Revenue by Collection
         </h2>
+        <p className="mb-4 text-xs" style={{ color: '#6a6a7a' }}>
+          Launchpad collections only — GuardianZ mints on its own Candy Machine and appears in the
+          totals above, not in this table.
+        </p>
         <div className="card overflow-x-auto">
           <table className="min-w-full divide-y" style={{ borderColor: GRID }}>
             <thead style={{ background: '#1a1a24' }}>
