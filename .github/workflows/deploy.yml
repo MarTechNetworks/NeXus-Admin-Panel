@@ -17,7 +17,7 @@ env:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       # Node 24 generation throughout. GitHub forces anything still targeting
       # node20 onto node24 already and warns about it on every run; these majors
@@ -112,7 +112,7 @@ jobs:
 
   deploy:
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
     # Queue deploys, never cancel them. A cancel lands mid-script, after Traefik
     # is repointed but before the old container is retired, or worse. Note this

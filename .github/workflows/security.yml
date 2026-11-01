@@ -16,7 +16,7 @@ permissions:
 jobs:
   # Container Security Scanning
   container-security:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       # upload-sarif writes to the Security tab; the default token is read-only.
@@ -59,7 +59,7 @@ jobs:
 
   # Code Security Analysis
   code-security:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
 
@@ -94,7 +94,7 @@ jobs:
 
   # Admin Security Analysis
   admin-security:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
 
@@ -118,7 +118,7 @@ jobs:
 
   # Secret Scanning
   secret-scan:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
         with:
@@ -136,7 +136,7 @@ jobs:
 
   # License Compliance
   license-compliance:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
 
