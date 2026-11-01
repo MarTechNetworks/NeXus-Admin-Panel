@@ -1,0 +1,3 @@
+{
+  "reject": ["@solana/web3.js"]
+}
