@@ -368,35 +368,75 @@ export const IX_LABELS: Record<AuthorityIxKind, string> = {
   emergency_unpause_all: 'emergency_unpause_all',
 }
 
-/** Re-export so callers can poll without importing web3 types directly. */
+/**
+ * Wait for a signature to reach `confirmed`, over HTTP polling (RPC websockets are the
+ * one dependency that fails silently and hangs the UI forever).
+ *
+ * ── Status first; expiry by blockhash, never by block height ─────────────────────
+ * This used to compare `getBlockHeight()` against `lastValidBlockHeight` before asking
+ * about the signature, and throw "expired — nothing was applied". publicnode (the only
+ * browser RPC on mainnet) answers `getBlockHeight` with the *slot* (~22M higher than the
+ * real block height) while its `getLatestBlockhash` reports a correct
+ * `lastValidBlockHeight` — so every poll looked 22M blocks past expiry and the very first
+ * one threw. On 2026-11-03 a fee-split retune landed twice on chain while the console
+ * said nothing was applied, both times.
+ *
+ * So: ask about the signature every poll; decide expiry with `isBlockhashValid`, which
+ * compares like with like on the node itself; keep polling through a grace period after
+ * that, because a transaction accepted just inside the window surfaces a few slots
+ * later; and when we still know nothing, say "unknown", never "not applied".
+ */
 export async function confirmSignature(
   connection: Connection,
   signature: string,
-  lastValidBlockHeight: number,
+  blockhash: string,
 ): Promise<void> {
-  // HTTP polling, same reasoning as the public site: RPC websockets are the one
-  // dependency that fails silently and hangs the UI forever.
   const POLL_MS = 1_500
-  const MAX_ATTEMPTS = 80
+  const MAX_ATTEMPTS = 120
+  const GRACE_POLLS = 10
+  let pollsAfterExpiry = 0
+
+  const unknown = () =>
+    new Error(
+      `Could not confirm ${signature.slice(0, 8)}… — it may still have landed. ` +
+        'Check it on the explorer before trying again.',
+    )
 
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-    const height = await connection.getBlockHeight('confirmed')
-    if (height > lastValidBlockHeight) {
-      throw new Error('Transaction expired before confirmation — nothing was applied. Try again.')
+    let status
+    try {
+      const { value } = await connection.getSignatureStatuses([signature], {
+        searchTransactionHistory: true,
+      })
+      status = value[0]
+    } catch {
+      // A failed poll says something about this request, not about the transaction.
+      await new Promise((resolve) => setTimeout(resolve, POLL_MS))
+      continue
     }
-    const { value } = await connection.getSignatureStatuses([signature], {
-      searchTransactionHistory: true,
-    })
-    const status = value[0]
+
     if (status?.err) {
       throw new Error(`Transaction failed on-chain: ${JSON.stringify(status.err)}`)
     }
     if (status?.confirmationStatus === 'confirmed' || status?.confirmationStatus === 'finalized') {
       return
     }
+
+    if (pollsAfterExpiry > 0) {
+      if (++pollsAfterExpiry > GRACE_POLLS) throw unknown()
+    } else {
+      try {
+        const { value: valid } = await connection.isBlockhashValid(blockhash, {
+          commitment: 'confirmed',
+        })
+        if (!valid) pollsAfterExpiry = 1
+      } catch {
+        // Validity unknown — keep polling the signature, which is what matters anyway.
+      }
+    }
     await new Promise((resolve) => setTimeout(resolve, POLL_MS))
   }
-  throw new Error('Timed out waiting for confirmation. Check the signature in an explorer.')
+  throw unknown()
 }
 
 /** Convenience for the console: does the connected wallet hold the registry key? */

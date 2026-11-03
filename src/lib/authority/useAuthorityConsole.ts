@@ -275,7 +275,7 @@ export function useAuthorityConsole() {
         const batch = active.batches[i]
         setSubmit((s) => ({ ...s, phase: 'building', batchIndex: i }))
 
-        const { transaction, lastValidBlockHeight } = await prepareBatch(
+        const { transaction, blockhash } = await prepareBatch(
           connection,
           batch,
           wallet.publicKey,
@@ -304,7 +304,7 @@ export function useAuthorityConsole() {
         signatures.push(signature)
         setSubmit((s) => ({ ...s, phase: 'confirming', signatures: [...signatures] }))
 
-        await confirmSignature(connection, signature, lastValidBlockHeight)
+        await confirmSignature(connection, signature, blockhash)
       }
 
       setSubmit((s) => ({ ...s, phase: 'success', signatures: [...signatures] }))
