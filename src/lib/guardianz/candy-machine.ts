@@ -40,23 +40,8 @@ import { GUARDIANZ_COLLECTION } from '@/lib/guardianz/constants'
 export const OPS_WALLET =
   process.env.NEXT_PUBLIC_GUARDIANZ_OPS_WALLET ?? '3NMwWyNqdWDyrVJmEUtWGYf7GnxBk2zXaXBz8moqtF9K'
 
-/**
- * Where the buyer's flat platform fee goes. Candy Guard's `solPayment` allows one
- * destination (the creator), so the fee is a separate `transferSol` in the same
- * transaction — atomic, and visible as a plain transfer on the explorer.
- */
-export const PLATFORM_FEE_WALLET =
-  process.env.NEXT_PUBLIC_GUARDIANZ_PLATFORM_WALLET ?? '4e5ztDKaKWZARpF7sNKXHtoC1SNwNhnFArrYuG7zhHfd'
-
-/**
- * Flat platform fee per NFT in lamports — the same 0.01 SOL the launchpad program
- * charges, so a GuardianZ mint and a launchpad mint cost the buyer the same on top of
- * price. Overridable per environment because, unlike the launchpad, nothing on-chain
- * enforces this one; it is a plain transfer we add ourselves.
- */
-export const PLATFORM_FEE_LAMPORTS = Number(
-  process.env.NEXT_PUBLIC_GUARDIANZ_PLATFORM_FEE_LAMPORTS ?? 10_000_000,
-)
+// The GuardianZ platform fee and its split are NOT constants here: they are the on-chain
+// PlatformFeeConfig, edited from Fees & minting and served by GET /api/solana/config.
 
 export interface CandyMachineState {
   address: string
